@@ -16,11 +16,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-
 @st.cache_resource
 def init_connection():
   if "gcp_service_account" in st.secrets:
-    # JSONとしてそのまま読み込めるように辞書化
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
   else:
