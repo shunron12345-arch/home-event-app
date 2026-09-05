@@ -20,14 +20,16 @@ SCOPES = [
 @st.cache_resource
 def init_connection():
   if "gcp_service_account" in st.secrets:
+    # JSONとしてそのまま読み込めるように辞書化
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
   else:
-    creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+    creds = Credentials.from_service_account_file(
+        "credentials.json", scopes=SCOPES
+    )
   client = gspread.authorize(creds)
   sheet = client.open("自宅イベント予約アプリ")
   return sheet
-
 
 try:
   sheet = init_connection()
