@@ -41,8 +41,8 @@ except Exception as e:
   st.stop()
 
 
-# データの読み込み関数（60秒間キャッシュしてAPI制限を回避）
-@st.cache_data(ttl=60)
+# データの読み込み関数（API制限対策としてキャッシュを追加）
+@st.cache_data(ttl=30)
 def load_data():
   try:
     schedules_data = sheet.worksheet("schedules").get_all_records()
@@ -125,10 +125,13 @@ if menu == "📅 予約カレンダー":
     for _, row in df_display.iterrows():
       rem = row["remaining"]
       status_text = f"残り{rem}枠" if rem > 0 else "満席"
-      color = "#28a745" if rem > 0 else "#dc3545"  # 空きは緑、満席は赤
+      color = "#28a745" if rem > 0 else "#dc3545"
 
-      # アイコンを付与
-      icon = "🍖" if "BBQ" in str(row["content"]) else ("🥁" if "ドラム" in str(row["content"]) else "🎯")
+      icon = (
+          "🍖"
+          if "BBQ" in str(row["content"])
+          else ("🥁" if "ドラム" in str(row["content"]) else "🎯")
+      )
 
       cal_events.append({
           "title": f"{icon} {row['content']} ({status_text})",
@@ -150,33 +153,30 @@ if menu == "📅 予約カレンダー":
         "height": "450px",
     }
 
-    # カレンダーの表示とクリックイベントの取得
     cal_return = calendar(events=cal_events, options=calendar_options)
 
-    # カレンダー上で日付が選択された場合、その日付のデータを優先して絞り込む機能
     selected_date = None
     if cal_return and "dateClick" in cal_return:
       selected_date = cal_return["dateClick"].get("date")
 
     st.markdown("---")
 
-    # 絞り込みフィルター
     col_f1, col_f2 = st.columns([2, 1])
     with col_f1:
       st.subheader("🗓️ 予約申し込みフォーム")
     with col_f2:
-      # 日付で絞り込むセレクトボックス
       date_list = sorted(df_display["date"].unique().tolist())
-      
-      # カレンダーでクリックされた日付があれば、それを初期選択にする
       default_idx = 0
       if selected_date and selected_date in date_list:
         default_idx = date_list.index(selected_date)
         st.info(f"📅 カレンダーから {selected_date} が選択されました！")
 
-      filter_date = st.selectbox("日付で絞り込み", ["すべて表示"] + date_list, index=default_idx + 1 if selected_date in date_list else 0)
+      filter_date = st.selectbox(
+          "日付で絞り込み",
+          ["すべて表示"] + date_list,
+          index=default_idx + 1 if selected_date in date_list else 0,
+      )
 
-    # 表示データの絞り込み
     if filter_date != "すべて表示":
       filtered_display = df_display[df_display["date"] == filter_date]
     else:
@@ -225,6 +225,7 @@ if menu == "📅 予約カレンダー":
                         str(user_name),
                     ]
                     sheet.worksheet("reservations").append_row(new_row)
+                    st.cache_data.clear()  # キャッシュをクリアして最新化
                     st.success(
                         f"{row['date']}の【{row['content']}】を予約しました！"
                     )
@@ -306,6 +307,7 @@ elif menu == "🔐 管理人ページ":
           sheet.worksheet("schedules").append_row(
               [sched_id, str(new_date), new_content, int(new_capacity)]
           )
+          st.cache_data.clear()
           st.success("新しい枠を追加しました！")
           time.sleep(1)
           st.rerun()
@@ -318,6 +320,7 @@ elif menu == "🔐 管理人ページ":
           cell = sheet.worksheet("schedules").find(str(del_id))
           if cell:
             sheet.worksheet("schedules").delete_rows(cell.row)
+            st.cache_data.clear()
             st.success("削除しました！")
             time.sleep(1)
             st.rerun()
@@ -350,6 +353,7 @@ elif menu == "🔐 管理人ページ":
           sheet.worksheet("lessons").append_row(
               [les_id, l_title, l_body, formatted_images, l_video, l_status]
           )
+          st.cache_data.clear()
           st.success("レッスン資料を保存しました！")
           time.sleep(1)
           st.rerun()
