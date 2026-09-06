@@ -1,11 +1,12 @@
 from datetime import datetime
 import time
-import gspread
 from google.oauth2.service_account import Credentials
+import gspread
 import pandas as pd
 import streamlit as st
+from streamlit_calendar import calendar
 
-# ページの基本設定（スマホで見やすいように設定）
+# ページの基本設定
 st.set_page_config(
     page_title="自宅イベント予約アプリ", page_icon="🏠", layout="centered"
 )
@@ -15,6 +16,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+
 
 @st.cache_resource
 def init_connection():
@@ -28,6 +30,7 @@ def init_connection():
   client = gspread.authorize(creds)
   sheet = client.open("自宅イベント予約アプリ")
   return sheet
+
 
 try:
   sheet = init_connection()
@@ -58,7 +61,9 @@ def load_data():
     df_lessons = (
         pd.DataFrame(lessons_data)
         if lessons_data
-        else pd.DataFrame(columns=["id", "title", "body", "video_url", "status"])
+        else pd.DataFrame(
+            columns=["id", "title", "body", "image_urls", "video_url", "status"]
+        )
     )
     return df_schedules, df_reservations, df_lessons
   except Exception as e:
@@ -66,7 +71,9 @@ def load_data():
     return (
         pd.DataFrame(columns=["id", "date", "content", "capacity"]),
         pd.DataFrame(columns=["id", "date", "content", "name"]),
-        pd.DataFrame(columns=["id", "title", "body", "video_url", "status"]),
+        pd.DataFrame(
+            columns=["id", "title", "body", "image_urls", "video_url", "status"]
+        ),
     )
 
 
@@ -83,7 +90,7 @@ menu = st.sidebar.radio(
 # ---------------------------------------------------------
 if menu == "📅 予約カレンダー":
   st.title("🏠 自宅イベント予約")
-  st.write("URLを知っている人専用の予約ページです！参加したい枠を選んでね。")
+  st.write("カレンダーで空き状況を確認し、下のリストから予約を入れられます。")
 
   if df_schedules.empty:
     st.info(
@@ -110,11 +117,42 @@ if menu == "📅 予約カレンダー":
         df_display["capacity"] - df_display["booked_count"]
     )
 
-    st.subheader("🗓️ 開催スケジュール一覧")
+    # ------------------
+    # カレンダービューの作成
+    # ------------------
+    cal_events = []
+    for _, row in df_display.iterrows():
+      rem = row["remaining"]
+      status_text = f"残り{rem}名" if rem > 0 else "満席"
+      color = "#28a745" if rem > 0 else "#dc3545"  # 空きは緑、満席は赤
+
+      cal_events.append({
+          "title": f"{row['content']} ({status_text})",
+          "start": str(row["date"]),
+          "allDay": True,
+          "backgroundColor": color,
+          "borderColor": color,
+      })
+
+    calendar_options = {
+        "headerToolbar": {
+            "left": "prev,next today",
+            "center": "title",
+            "right": "dayGridMonth,timeGridWeek",
+        },
+        "initialView": "dayGridMonth",
+        "selectable": True,
+        "editable": False,
+        "height": "450px",
+    }
+
+    calendar(events=cal_events, options=calendar_options)
+
+    st.markdown("---")
+    st.subheader("🗓️ 予約申し込みフォーム一覧")
 
     for index, row in df_display.iterrows():
       with st.container():
-        st.markdown(f"---")
         col1, col2 = st.columns([2, 1])
         with col1:
           st.markdown(f"**📅 日付:** {row['date']}")
@@ -146,7 +184,6 @@ if menu == "📅 予約カレンダー":
                 if user_name.strip() == "":
                   st.warning("お名前を入力してください。")
                 else:
-                  # スプレッドシートに書き込み
                   new_row = [
                       str(row["id"]),
                       str(row["date"]),
@@ -161,9 +198,10 @@ if menu == "📅 予約カレンダー":
                   st.rerun()
           else:
             st.write("❌ 満席です")
+        st.markdown(f"---")
 
 # ---------------------------------------------------------
-# 2. ドラム練習ページ
+# 2. ドラム練習ページ（複数画像・動画対応レイアウト）
 # ---------------------------------------------------------
 elif menu == "🥁 ドラム練習ページ":
   st.title("🥁 ドラム練習・楽譜置き場")
@@ -172,15 +210,41 @@ elif menu == "🥁 ドラム練習ページ":
   if df_lessons.empty:
     st.info("まだ公開されているレッスン記事はありません。")
   else:
+    # カラムが存在しない場合の対策
+    if "image_urls" not in df_lessons.columns:
+      df_lessons["image_urls"] = ""
+
     published_lessons = df_lessons[df_lessons["status"] == "公開"]
     if published_lessons.empty:
       st.info("現在準備中のため、公開されている記事はありません。")
     else:
       for _, lesson in published_lessons.iterrows():
-        st.markdown(f"### {lesson['title']}")
-        st.markdown(f"{lesson['body']}")
+        st.markdown(f"## 🎵 {lesson['title']}")
+        st.write(lesson["body"])
+
+        # 動画がある場合（YouTubeなど）
         if lesson["video_url"]:
+          st.markdown("### 📺 レッスン動画")
           st.video(lesson["video_url"])
+
+        # 画像が複数ある場合（カンマ区切りで保存されたURLを展開）
+        if lesson["image_urls"]:
+          st.markdown("### 🖼️ 楽譜・資料画像")
+          urls = [
+              url.strip()
+              for url in str(lesson["image_urls"]).split(",")
+              if url.strip()
+          ]
+          if len(urls) > 0:
+            # スマホでも見やすいようにタブまたは横並びで表示
+            if len(urls) == 1:
+              st.image(urls[0], use_container_width=True)
+            else:
+              tabs = st.tabs([f"画像 {i+1}" for i in range(len(urls))])
+              for i, tab in enumerate(tabs):
+                with tab:
+                  st.image(urls[i], use_container_width=True)
+
         st.markdown("---")
 
 # ---------------------------------------------------------
@@ -189,9 +253,7 @@ elif menu == "🥁 ドラム練習ページ":
 elif menu == "🔐 管理人ページ":
   st.title("🔐 管理人専用ダッシュボード")
 
-  # パスワード認証
   admin_pass = st.text_input("管理人パスワードを入力", type="password")
-  # 簡易パスワード（必要に応じて変更してください）
   if admin_pass == "admin123":
     st.success("認証成功しました！")
 
@@ -221,10 +283,8 @@ elif menu == "🔐 管理人ページ":
       st.subheader("登録済みのスケジュール一覧")
       if not df_schedules.empty:
         st.dataframe(df_schedules)
-        # 削除機能
         del_id = st.text_input("削除したい枠のIDを入力")
         if st.button("指定したIDの枠を削除"):
-          # 行削除の処理
           cell = sheet.worksheet("schedules").find(str(del_id))
           if cell:
             sheet.worksheet("schedules").delete_rows(cell.row)
@@ -241,14 +301,26 @@ elif menu == "🔐 管理人ページ":
       with st.form("add_lesson_form"):
         l_title = st.text_input("タイトル（例: 初心者向け基本ビート）")
         l_body = st.text_area("説明文・楽譜メモなど")
-        l_video = st.text_input("YouTube動画URL（任意）")
+        l_images = st.text_area(
+            "画像URL（複数ある場合は改行またはカンマ区切りで入力）"
+        )
+        l_video = st.text_input("YouTube動画URL（限定公開URLなど）")
         l_status = st.selectbox("ステータス", ["下書き", "公開"])
         l_btn = st.form_submit_button("レッスン資料を追加")
 
         if l_btn:
+          # 改行やカンマを整理
+          formatted_images = ",".join(
+              [
+                  line.strip()
+                  for line in l_images.replace(",", "\n").split("\n")
+                  if line.strip()
+              ]
+          )
           les_id = str(int(time.time()))
+          # 注意: 事前にスプレッドシートの lessons シートの1行目に `image_urls` 列を追加してください
           sheet.worksheet("lessons").append_row(
-              [les_id, l_title, l_body, l_video, l_status]
+              [les_id, l_title, l_body, formatted_images, l_video, l_status]
           )
           st.success("レッスン資料を保存しました！")
           time.sleep(1)
