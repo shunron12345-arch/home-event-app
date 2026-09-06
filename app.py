@@ -90,7 +90,7 @@ menu = st.sidebar.radio(
 # ---------------------------------------------------------
 if menu == "📅 予約カレンダー":
   st.title("🏠 自宅イベント予約")
-  st.write("カレンダーで空き状況を確認し、下のリストから予約を入れられます。")
+  st.write("カレンダーで空き状況を確認し、下のフォームから予約できます。")
 
   if df_schedules.empty:
     st.info(
@@ -123,11 +123,14 @@ if menu == "📅 予約カレンダー":
     cal_events = []
     for _, row in df_display.iterrows():
       rem = row["remaining"]
-      status_text = f"残り{rem}名" if rem > 0 else "満席"
+      status_text = f"残り{rem}枠" if rem > 0 else "満席"
       color = "#28a745" if rem > 0 else "#dc3545"  # 空きは緑、満席は赤
 
+      # アイコンを付与
+      icon = "🍖" if "BBQ" in str(row["content"]) else ("🥁" if "ドラム" in str(row["content"]) else "🎯")
+
       cal_events.append({
-          "title": f"{row['content']} ({status_text})",
+          "title": f"{icon} {row['content']} ({status_text})",
           "start": str(row["date"]),
           "allDay": True,
           "backgroundColor": color,
@@ -146,62 +149,92 @@ if menu == "📅 予約カレンダー":
         "height": "450px",
     }
 
-    calendar(events=cal_events, options=calendar_options)
+    # カレンダーの表示とクリックイベントの取得
+    cal_return = calendar(events=cal_events, options=calendar_options)
+
+    # カレンダー上で日付が選択された場合、その日付のデータを優先して絞り込む機能
+    selected_date = None
+    if cal_return and "dateClick" in cal_return:
+      selected_date = cal_return["dateClick"].get("date")
 
     st.markdown("---")
-    st.subheader("🗓️ 予約申し込みフォーム一覧")
 
-    for index, row in df_display.iterrows():
-      with st.container():
-        col1, col2 = st.columns([2, 1])
-        with col1:
-          st.markdown(f"**📅 日付:** {row['date']}")
-          st.markdown(f"**🎯 イベント:** {row['content']}")
-          rem = row["remaining"]
-          cap = row["capacity"]
-          if rem > 0:
-            st.markdown(
-                f"**🟢 残り枠:** <span style='color:green; font-weight:bold;'>{rem}"
-                f"名</span> (定員: {cap}名)",
-                unsafe_allow_html=True,
-            )
-          else:
-            st.markdown(
-                f"**🔴 残り枠:** <span"
-                " style='color:red; font-weight:bold;'>満席</span>"
-                f" (定員: {cap}名)",
-                unsafe_allow_html=True,
-            )
+    # 絞り込みフィルター
+    col_f1, col_f2 = st.columns([2, 1])
+    with col_f1:
+      st.subheader("🗓️ 予約申し込みフォーム")
+    with col_f2:
+      # 日付で絞り込むセレクトボックス
+      date_list = sorted(df_display["date"].unique().tolist())
+      
+      # カレンダーでクリックされた日付があれば、それを初期選択にする
+      default_idx = 0
+      if selected_date and selected_date in date_list:
+        default_idx = date_list.index(selected_date)
+        st.info(f"📅 カレンダーから {selected_date} が選択されました！")
 
-        with col2:
-          if rem > 0:
-            with st.form(key=f"予約form_{row['id']}_{index}"):
-              user_name = st.text_input(
-                  "お名前（ニックネーム可）", key=f"name_{row['id']}_{index}"
+      filter_date = st.selectbox("日付で絞り込み", ["すべて表示"] + date_list, index=default_idx + 1 if selected_date in date_list else 0)
+
+    # 表示データの絞り込み
+    if filter_date != "すべて表示":
+      filtered_display = df_display[df_display["date"] == filter_date]
+    else:
+      filtered_display = df_display
+
+    if filtered_display.empty:
+      st.info("選択された日付の開催枠はありません。")
+    else:
+      for index, row in filtered_display.iterrows():
+        with st.container():
+          col1, col2 = st.columns([2, 1])
+          with col1:
+            st.markdown(f"**📅 日付:** {row['date']}")
+            st.markdown(f"**🎯 イベント:** {row['content']}")
+            rem = row["remaining"]
+            cap = row["capacity"]
+            if rem > 0:
+              st.markdown(
+                  f"**🟢 残り枠:** <span style='color:green; font-weight:bold;'>{rem}"
+                  f"枠</span> (定員: {cap}名)",
+                  unsafe_allow_html=True,
               )
-              submit = st.form_submit_button("予約する")
-              if submit:
-                if user_name.strip() == "":
-                  st.warning("お名前を入力してください。")
-                else:
-                  new_row = [
-                      str(row["id"]),
-                      str(row["date"]),
-                      str(row["content"]),
-                      str(user_name),
-                  ]
-                  sheet.worksheet("reservations").append_row(new_row)
-                  st.success(
-                      f"{row['date']}の【{row['content']}】を予約しました！"
-                  )
-                  time.sleep(1)
-                  st.rerun()
-          else:
-            st.write("❌ 満席です")
-        st.markdown(f"---")
+            else:
+              st.markdown(
+                  f"**🔴 残り枠:** <span"
+                  " style='color:red; font-weight:bold;'>満席</span>"
+                  f" (定員: {cap}名)",
+                  unsafe_allow_html=True,
+              )
+
+          with col2:
+            if rem > 0:
+              with st.form(key=f"予約form_{row['id']}_{index}"):
+                user_name = st.text_input(
+                    "お名前（ニックネーム可）", key=f"name_{row['id']}_{index}"
+                )
+                submit = st.form_submit_button("予約する")
+                if submit:
+                  if user_name.strip() == "":
+                    st.warning("お名前を入力してください。")
+                  else:
+                    new_row = [
+                        str(row["id"]),
+                        str(row["date"]),
+                        str(row["content"]),
+                        str(user_name),
+                    ]
+                    sheet.worksheet("reservations").append_row(new_row)
+                    st.success(
+                        f"{row['date']}の【{row['content']}】を予約しました！"
+                    )
+                    time.sleep(1)
+                    st.rerun()
+            else:
+              st.write("❌ 満席です")
+          st.markdown(f"---")
 
 # ---------------------------------------------------------
-# 2. ドラム練習ページ（複数画像・動画対応レイアウト）
+# 2. ドラム練習ページ
 # ---------------------------------------------------------
 elif menu == "🥁 ドラム練習ページ":
   st.title("🥁 ドラム練習・楽譜置き場")
@@ -210,7 +243,6 @@ elif menu == "🥁 ドラム練習ページ":
   if df_lessons.empty:
     st.info("まだ公開されているレッスン記事はありません。")
   else:
-    # カラムが存在しない場合の対策
     if "image_urls" not in df_lessons.columns:
       df_lessons["image_urls"] = ""
 
@@ -222,12 +254,10 @@ elif menu == "🥁 ドラム練習ページ":
         st.markdown(f"## 🎵 {lesson['title']}")
         st.write(lesson["body"])
 
-        # 動画がある場合（YouTubeなど）
         if lesson["video_url"]:
           st.markdown("### 📺 レッスン動画")
           st.video(lesson["video_url"])
 
-        # 画像が複数ある場合（カンマ区切りで保存されたURLを展開）
         if lesson["image_urls"]:
           st.markdown("### 🖼️ 楽譜・資料画像")
           urls = [
@@ -236,7 +266,6 @@ elif menu == "🥁 ドラム練習ページ":
               if url.strip()
           ]
           if len(urls) > 0:
-            # スマホでも見やすいようにタブまたは横並びで表示
             if len(urls) == 1:
               st.image(urls[0], use_container_width=True)
             else:
@@ -309,7 +338,6 @@ elif menu == "🔐 管理人ページ":
         l_btn = st.form_submit_button("レッスン資料を追加")
 
         if l_btn:
-          # 改行やカンマを整理
           formatted_images = ",".join(
               [
                   line.strip()
@@ -318,7 +346,6 @@ elif menu == "🔐 管理人ページ":
               ]
           )
           les_id = str(int(time.time()))
-          # 注意: 事前にスプレッドシートの lessons シートの1行目に `image_urls` 列を追加してください
           sheet.worksheet("lessons").append_row(
               [les_id, l_title, l_body, formatted_images, l_video, l_status]
           )
