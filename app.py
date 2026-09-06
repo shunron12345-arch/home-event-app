@@ -41,7 +41,8 @@ except Exception as e:
   st.stop()
 
 
-# データの読み込み関数
+# データの読み込み関数（60秒間キャッシュしてAPI制限を回避）
+@st.cache_data(ttl=60)
 def load_data():
   try:
     schedules_data = sheet.worksheet("schedules").get_all_records()
