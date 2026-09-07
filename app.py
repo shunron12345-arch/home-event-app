@@ -58,7 +58,7 @@ st.markdown("""
         transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
 
-    /* カレンダー内の日付ボタンの強制改行・省略防止 ＆ ズレ防止（常に同じボックスサイズを維持） */
+    /* カレンダー内の日付ボタン（および月移動ボタン）の強制改行・省略防止 ＆ ズレ防止 */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
         height: auto !important;
@@ -84,17 +84,6 @@ st.markdown("""
         overflow: visible !important;
         display: block !important;
         width: 100% !important;
-    }
-
-    /* 月切り替えコントロール用のコンパクトなボタン設定（全幅引き伸ばしを防止） */
-    .month-nav-container div[data-testid="stButton"] button {
-        height: 36px !important;
-        min-height: 36px !important;
-        padding: 0px 8px !important;
-        font-size: 0.75rem !important;
-        width: auto !important;
-        min-width: 65px !important;
-        white-space: nowrap !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -257,36 +246,11 @@ if menu == "📅 予約カレンダー":
   if "selected_date" not in st.session_state:
     st.session_state.selected_date = "すべて表示"
 
-  # 月切り替えコントロール（前月・タイトル・次月をコンパクトに横並び）
-  st.markdown('<div class="month-nav-container">', unsafe_allow_html=True)
-  col_title, col_prev, col_next = st.columns([2, 1, 1])
-  
-  with col_title:
-    st.markdown(
-        f"<div style='font-size: 1.1rem; font-weight: bold; color: #000000; padding-top: 6px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
-        unsafe_allow_html=True,
-    )
-
-  with col_prev:
-    if st.button("◀ 前月", use_container_width=True):
-      if st.session_state.cal_month == 1:
-        st.session_state.cal_month = 12
-        st.session_state.cal_year -= 1
-      else:
-        st.session_state.cal_month -= 1
-      st.rerun()
-
-  with col_next:
-    if st.button("次月 ▶", use_container_width=True):
-      if st.session_state.cal_month == 12:
-        st.session_state.cal_month = 1
-        st.session_state.cal_year += 1
-      else:
-        st.session_state.cal_month += 1
-      st.rerun()
-  st.markdown('</div>', unsafe_allow_html=True)
-
-  st.markdown("<br>", unsafe_allow_html=True)
+  # 現在の年月タイトル表示
+  st.markdown(
+      f"<div style='font-size: 1.2rem; font-weight: bold; color: #000000; text-align: center; margin-bottom: 10px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
+      unsafe_allow_html=True,
+  )
 
   # カレンダーの描画
   cols = st.columns(7)
@@ -295,8 +259,11 @@ if menu == "📅 予約カレンダー":
 
   cal_matrix = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
   today_str = datetime.today().strftime("%Y-%m-%d")
-  
-  for week in cal_matrix:
+
+  # 1日〜末日までをフラットなリストにしつつ、前月・次月ボタンを前後に埋め込む構成にするため、セル要素を構築
+  # 月の最初の曜日の空きセル＋1日、から順にセルを配置していく
+  # カレンダーの各週を順番に処理
+  for week_idx, week in enumerate(cal_matrix):
     cols = st.columns(7)
     for i, day in enumerate(week):
       with cols[i]:
@@ -345,6 +312,25 @@ if menu == "📅 予約カレンダー":
           if st.button(btn_label, key=f"cal_day_{date_str}", use_container_width=True):
             st.session_state.selected_date = date_str
             st.rerun()
+
+  # カレンダーの下に「前月」「次月」ボタンを日付サイズと同じ仕様でグリッド風に並べる
+  col_prev_btn, col_next_btn = st.columns(2)
+  with col_prev_btn:
+    if st.button("◀ 前月", key="cal_prev_month", use_container_width=True):
+      if st.session_state.cal_month == 1:
+        st.session_state.cal_month = 12
+        st.session_state.cal_year -= 1
+      else:
+        st.session_state.cal_month -= 1
+      st.rerun()
+  with col_next_btn:
+    if st.button("次月 ▶", key="cal_next_month", use_container_width=True):
+      if st.session_state.cal_month == 12:
+        st.session_state.cal_month = 1
+        st.session_state.cal_year += 1
+      else:
+        st.session_state.cal_month += 1
+      st.rerun()
 
   # 凡例
   st.markdown(
@@ -541,32 +527,10 @@ elif menu == "🔐 管理人ページ":
       if "admin_selected_date" not in st.session_state:
         st.session_state.admin_selected_date = datetime.today().date()
 
-      st.markdown('<div class="month-nav-container">', unsafe_allow_html=True)
-      col_atitle, col_aprev, col_anext = st.columns([2, 1, 1])
-      with col_atitle:
-        st.markdown(
-            f"<div style='font-size: 1.1rem; font-weight: bold; color: #000000; padding-top: 6px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
-            unsafe_allow_html=True,
-        )
-      with col_aprev:
-        if st.button("◀ 前月", key="adm_prev", use_container_width=True):
-          if st.session_state.cal_month == 1:
-            st.session_state.cal_month = 12
-            st.session_state.cal_year -= 1
-          else:
-            st.session_state.cal_month -= 1
-          st.rerun()
-      with col_anext:
-        if st.button("次月 ▶", key="adm_next", use_container_width=True):
-          if st.session_state.cal_month == 12:
-            st.session_state.cal_month = 1
-            st.session_state.cal_year += 1
-          else:
-            st.session_state.cal_month += 1
-          st.rerun()
-      st.markdown('</div>', unsafe_allow_html=True)
-
-      st.markdown("<br>", unsafe_allow_html=True)
+      st.markdown(
+          f"<div style='font-size: 1.1rem; font-weight: bold; color: #000000; text-align: center; margin-bottom: 10px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
+          unsafe_allow_html=True,
+      )
 
       cols = st.columns(7)
       for i, day_name in enumerate(weekdays):
@@ -584,6 +548,24 @@ elif menu == "🔐 管理人ページ":
               if st.button(f"{day}", key=f"adm_day_{date_str}", use_container_width=True):
                 st.session_state.admin_selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 st.rerun()
+
+      col_aprev_btn, col_anext_btn = st.columns(2)
+      with col_aprev_btn:
+        if st.button("◀ 前月", key="adm_prev_btn", use_container_width=True):
+          if st.session_state.cal_month == 1:
+            st.session_state.cal_month = 12
+            st.session_state.cal_year -= 1
+          else:
+            st.session_state.cal_month -= 1
+          st.rerun()
+      with col_anext_btn:
+        if st.button("次月 ▶", key="adm_next_btn", use_container_width=True):
+          if st.session_state.cal_month == 12:
+            st.session_state.cal_month = 1
+            st.session_state.cal_year += 1
+          else:
+            st.session_state.cal_month += 1
+          st.rerun()
 
       st.markdown("---")
 
