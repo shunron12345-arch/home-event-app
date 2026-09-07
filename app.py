@@ -1,14 +1,14 @@
+import calendar
 from datetime import datetime
 import time
 from google.oauth2.service_account import Credentials
 import gspread
 import pandas as pd
 import streamlit as st
-from streamlit_calendar import calendar
 
 # ページの基本設定
 st.set_page_config(
-    page_title="自宅イベント予約アプリ", page_icon="🏠", layout="centered"
+    page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
 # Googleスプレッドシート接続設定
@@ -28,7 +28,7 @@ def init_connection():
         "credentials.json", scopes=SCOPES
     )
   client = gspread.authorize(creds)
-  sheet = client.open("自宅イベント予約アプリ")
+  sheet = client.open("予約アプリ")
   return sheet
 
 
@@ -49,7 +49,6 @@ def load_data():
     reservations_data = sheet.worksheet("reservations").get_all_records()
     lessons_data = sheet.worksheet("lessons").get_all_records()
     
-    # メモデータの読み込み（memosシートがない場合のフォールバック付き）
     try:
       memos_data = sheet.worksheet("memos").get_all_records()
     except Exception:
@@ -108,23 +107,65 @@ def load_data():
 
 df_schedules, df_reservations, df_lessons, df_memos = load_data()
 
+
 # サイドバーメニュー
 st.sidebar.title("🏠 メニュー")
 menu = st.sidebar.radio(
-    "ページを選択", ["📅 予約カレンダー", "🥁 ドラム練習ページ", "🔐 管理人ページ"]
+    "ページを選択", ["📅 予約カレンダー", "🥁 ドラム練習用", "🔐 管理人ページ"]
 )
 
 # ---------------------------------------------------------
 # 1. 予約カレンダーページ
 # ---------------------------------------------------------
 if menu == "📅 予約カレンダー":
-  st.title("🏠 自宅イベント予約")
-  st.write("カレンダーで空き状況を確認し、下のフォームから予約できます。")
+  st.title("予約")
+  st.write("カレンダーの日付をクリックすると、下の予約申し込みフォームがその日付に絞り込まれます。")
 
-  # カレンダー表示用のイベントリスト作成
+  # ポップで楽しいカレンダーデザイン＆はみ出し防止CSS（7列グリッド専用）
+  st.markdown("""
+    <style>
+    /* 7列グリッドの維持 */
+    [data-testid="stHorizontalBlock"]:not(:has(> [data-testid="stColumn"]:nth-child(3):last-child)) {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 3px !important;
+    }
+    [data-testid="stHorizontalBlock"]:not(:has(> [data-testid="stColumn"]:nth-child(3):last-child)) > [data-testid="stColumn"] {
+        flex: 1 !important;
+        min-width: 0 !important;
+        width: calc(100% / 7) !important;
+    }
+    /* ボタンの共通ポップデザイン */
+    div[data-testid="stButton"] button {
+        border-radius: 10px;
+        border: 2px solid #e2e8f0;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        color: #1e293b;
+        font-weight: 700;
+        padding: 6px 18px !important;
+        font-size: 0.65rem !important;
+        line-height: 1.2 !important;
+        white-space: pre-line !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        transition: all 0.2s ease;
+    }
+    /* カレンダー内の日付ボタン（幅100%・コンパクトフォント） */
+    div[data-testid="stColumn"] div[data-testid="stButton"] button {
+        width: 100% !important;
+        padding: 4px 2px !important;
+        font-size: 0.58rem !important;
+    }
+    div[data-testid="stButton"] button:hover {
+        border-color: #ec4899;
+        color: #ec4899;
+        background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+        transform: translateY(-1px);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+  # データの集計処理
   cal_events = []
-
-  # スケジュールイベントの追加
   if not df_schedules.empty:
     if not df_reservations.empty:
       res_counts = (
@@ -143,91 +184,128 @@ if menu == "📅 予約カレンダー":
     df_display["remaining"] = (
         df_display["capacity"] - df_display["booked_count"]
     )
-
-    for _, row in df_display.iterrows():
-      rem = row["remaining"]
-      content_str = str(row["content"])
-
-      if rem <= 0:
-        color = "#dc3545"  # 満席：赤
-      else:
-        if "BBQ" in content_str:
-          color = "#e67e22"  # BBQ：オレンジ系
-        elif "ドラム" in content_str:
-          color = "#2980b9"  # ドラム：青系
-        else:
-          color = "#8e44ad"  # ダーツ（その他）：紫系
-
-      title_text = f"{content_str}(残{rem})"
-
-      cal_events.append({
-          "title": title_text,
-          "start": str(row["date"]),
-          "allDay": True,
-          "backgroundColor": color,
-          "borderColor": color,
-      })
   else:
     df_display = pd.DataFrame(columns=["id", "date", "content", "capacity", "remaining"])
 
-  # メモ（不在など）イベントの追加（グレー系の色）
-  if not df_memos.empty:
-    for _, row in df_memos.iterrows():
-      cal_events.append({
-          "title": str(row["content"]),
-          "start": str(row["date"]),
-          "allDay": True,
-          "backgroundColor": "#7f8c8d",  # メモ：グレー系
-          "borderColor": "#7f8c8d",
-      })
+  # セッションステートの初期化
+  if "cal_year" not in st.session_state:
+    st.session_state.cal_year = datetime.today().year
+  if "cal_month" not in st.session_state:
+    st.session_state.cal_month = datetime.today().month
+  if "selected_date" not in st.session_state:
+    st.session_state.selected_date = "すべて表示"
 
-  # カレンダービューの表示
-  calendar_options = {
-      "headerToolbar": {
-          "left": "prev,next today",
-          "center": "title",
-          "right": "",
-      },
-      "initialView": "dayGridMonth",
-      "selectable": True,
-      "editable": False,
-      "height": "450px",
-  }
+  # 月切り替えコントロール（前月・次月をタイトルの横、または左側にまとめる）
+  col_title, col_prev, col_next = st.columns([2, 1, 1])
+  with col_title:
+    st.markdown(
+        f"<h3 style='margin: 0; font-size: 1.3rem; padding-top: 5px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
+        unsafe_allow_html=True,
+    )
+  with col_prev:
+    if st.button("◀ 前月", use_container_width=True):
+      if st.session_state.cal_month == 1:
+        st.session_state.cal_month = 12
+        st.session_state.cal_year -= 1
+      else:
+        st.session_state.cal_month -= 1
+      st.rerun()
+  with col_next:
+    if st.button("次月 ▶", use_container_width=True):
+      if st.session_state.cal_month == 12:
+        st.session_state.cal_month = 1
+        st.session_state.cal_year += 1
+      else:
+        st.session_state.cal_month += 1
+      st.rerun()
 
-  cal_return = calendar(events=cal_events, options=calendar_options)
+  st.markdown("<br>", unsafe_allow_html=True)
 
-  selected_date = None
-  if cal_return and "dateClick" in cal_return:
-    clicked_date_str = cal_return["dateClick"].get("date")
-    if clicked_date_str:
-      date_part = clicked_date_str.split("T")[0]
-      parsed_date = datetime.strptime(date_part, "%Y-%m-%d").date()
-      import datetime as dt
-      selected_date = str(parsed_date + dt.timedelta(days=1))
+  # ネイティブカレンダー（グリッド表示）の描画
+  weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+  cols = st.columns(7)
+  for i, day_name in enumerate(weekdays):
+    cols[i].markdown(f"<div style='text-align: center; font-weight: bold; color: #db2777; font-size: 0.8rem;'>{day_name}</div>", unsafe_allow_html=True)
+
+  cal_matrix = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
+  
+  for week in cal_matrix:
+    cols = st.columns(7)
+    for i, day in enumerate(week):
+      with cols[i]:
+        if day == 0:
+          st.write("")
+        else:
+          date_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
+          
+          # その日のスケジュール情報を取得
+          day_schedules = df_display[df_display["date"] == date_str] if not df_display.empty else pd.DataFrame()
+          has_memo = not df_memos[df_memos["date"] == date_str].empty if not df_memos.empty else False
+
+          # 選択中ならポップな星印をつける
+          if st.session_state.selected_date == date_str:
+            btn_label = f"⭐{day}\n"
+          else:
+            btn_label = f"{day}\n"
+
+          if not day_schedules.empty:
+            content_lines = []
+            for _, sched in day_schedules.iterrows():
+              c_name = str(sched["content"])
+              if "BBQ" in c_name:
+                short_name = "BBQ"
+              elif "ドラム" in c_name:
+                short_name = "ドラム"
+              elif "ダーツ" in c_name:
+                short_name = "ダーツ"
+              else:
+                short_name = c_name[:3]
+              
+              rem = sched["remaining"]
+              if rem > 0:
+                content_lines.append(f"{short_name}(残{rem})")
+              else:
+                content_lines.append(f"{short_name}(満)")
+            
+            btn_label += "\n".join(content_lines)
+          elif has_memo:
+            btn_label += "📝メモ"
+
+          if st.button(btn_label, key=f"cal_day_{date_str}", use_container_width=True):
+            st.session_state.selected_date = date_str
+            st.rerun()
+
+  if st.button("すべての期間を表示する", use_container_width=True):
+    st.session_state.selected_date = "すべて表示"
+    st.rerun()
 
   st.markdown("---")
 
+  # 予約申し込みフォーム（一覧・絞り込み付き）
   if df_schedules.empty:
     st.info("現在、公開されている開催予定はありません。管理人ページから枠を追加してください。")
   else:
-    col_f1, col_f2 = st.columns([2, 1])
-    with col_f1:
-      st.subheader("🗓️ 予約申し込みフォーム")
-    with col_f2:
-      date_list = sorted(df_display["date"].unique().tolist())
-      default_idx = 0
-      if selected_date and selected_date in date_list:
-        default_idx = date_list.index(selected_date)
-        st.info(f"📅 カレンダーから {selected_date} が選択されました！")
+    st.subheader("🗓️ 予約申し込みフォーム（一覧）")
+    date_list = sorted(df_display["date"].unique().tolist())
+    
+    filter_options = ["すべて表示"] + date_list
+    
+    current_index = 0
+    if st.session_state.selected_date in filter_options:
+      current_index = filter_options.index(st.session_state.selected_date)
 
-      filter_date = st.selectbox(
-          "日付で絞り込み",
-          ["すべて表示"] + date_list,
-          index=default_idx + 1 if selected_date in date_list else 0,
-      )
+    filter_date = st.selectbox(
+        "日付で絞り込み",
+        filter_options,
+        index=current_index,
+        key="selectbox_filter_date"
+    )
 
-    if filter_date != "すべて表示":
-      filtered_display = df_display[df_display["date"] == filter_date]
+    if filter_date != st.session_state.selected_date:
+      st.session_state.selected_date = filter_date
+
+    if st.session_state.selected_date != "すべて表示":
+      filtered_display = df_display[df_display["date"] == st.session_state.selected_date]
     else:
       filtered_display = df_display
 
@@ -274,7 +352,7 @@ if menu == "📅 予約カレンダー":
             if rem > 0:
               with st.form(key=f"予約form_{row['id']}_{index}"):
                 user_name = st.text_input(
-                    "お名前（ニックネーム可）", key=f"name_{row['id']}_{index}"
+                    "お名前", key=f"name_{row['id']}_{index}"
                 )
                 submit = st.form_submit_button("予約する")
                 if submit:
@@ -299,14 +377,14 @@ if menu == "📅 予約カレンダー":
           st.markdown(f"---")
 
 # ---------------------------------------------------------
-# 2. ドラム練習ページ
+# 2. ドラム練習用
 # ---------------------------------------------------------
-elif menu == "🥁 ドラム練習ページ":
-  st.title("🥁 ドラム練習・楽譜置き場")
+elif menu == "🥁 ドラム練習用":
+  st.title("🥁 楽譜等の置き場")
   st.write("管理人が準備したドラムの楽譜やレッスン動画を確認できます。")
 
   if df_lessons.empty:
-    st.info("まだ公開されているレッスン記事はありません。")
+    st.info("まだ公開されている記事はありません。")
   else:
     if "image_urls" not in df_lessons.columns:
       df_lessons["image_urls"] = ""
@@ -320,11 +398,11 @@ elif menu == "🥁 ドラム練習ページ":
         st.write(lesson["body"])
 
         if lesson["video_url"]:
-          st.markdown("### 📺 レッスン動画")
+          st.markdown("### 📺 動画")
           st.video(lesson["video_url"])
 
         if lesson["image_urls"]:
-          st.markdown("### 🖼️ 楽譜・資料画像")
+          st.markdown("### 🖼️ 楽譜等")
           urls = [
               url.strip()
               for url in str(lesson["image_urls"]).split(",")
@@ -352,96 +430,57 @@ elif menu == "🔐 管理人ページ":
     st.success("認証成功しました！")
 
     tab_sch, tab_memo, tab_les, tab_res_list = st.tabs(
-        ["🗓️ 枠の管理", "📝 メモ・不在の管理", "🥁 ドラム資料の管理", "📋 予約者一覧"]
+        ["🗓️ 枠の管理", "📝 メモの管理", "🥁 ドラム資料の管理", "📋 予約者一覧"]
     )
 
     with tab_sch:
       st.subheader("🗓️ 開催スケジュール確認・追加カレンダー")
-      st.write("カレンダーの日付をクリックすると、その日の枠を簡単に追加できます！")
+      st.write("カレンダーの日付ボタンを押すと、下の開催日として自動選択されます。")
 
       if "admin_selected_date" not in st.session_state:
-        st.session_state.admin_selected_date = None
+        st.session_state.admin_selected_date = datetime.today().date()
 
-      admin_cal_events = []
-      if not df_schedules.empty:
-        if not df_reservations.empty:
-          res_counts_adm = (
-              df_reservations.groupby(["date", "content"])
-              .size()
-              .reset_index(name="booked_count")
-          )
-          df_adm_display = pd.merge(
-              df_schedules, res_counts_adm, on=["date", "content"], how="left"
-          )
-          df_adm_display["booked_count"] = (
-              df_adm_display["booked_count"].fillna(0).astype(int)
-          )
-        else:
-          df_adm_display = df_schedules.copy()
-          df_adm_display["booked_count"] = 0
-
-        df_adm_display["remaining"] = (
-            df_adm_display["capacity"] - df_adm_display["booked_count"]
+      col_atitle, col_aprev, col_anext = st.columns([2, 1, 1])
+      with col_atitle:
+        st.markdown(
+            f"<h3 style='margin: 0; font-size: 1.3rem; padding-top: 5px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
+            unsafe_allow_html=True,
         )
-
-        for _, row in df_adm_display.iterrows():
-          content_str = str(row['content'])
-          rem = row["remaining"]
-
-          if rem <= 0:
-            adm_color = "#dc3545"
+      with col_aprev:
+        if st.button("◀ 前月", key="adm_prev", use_container_width=True):
+          if st.session_state.cal_month == 1:
+            st.session_state.cal_month = 12
+            st.session_state.cal_year -= 1
           else:
-            if "BBQ" in content_str:
-              adm_color = "#e67e22"
-            elif "ドラム" in content_str:
-              adm_color = "#2980b9"
+            st.session_state.cal_month -= 1
+          st.rerun()
+      with col_anext:
+        if st.button("次月 ▶", key="adm_next", use_container_width=True):
+          if st.session_state.cal_month == 12:
+            st.session_state.cal_month = 1
+            st.session_state.cal_year += 1
+          else:
+            st.session_state.cal_month += 1
+          st.rerun()
+
+      st.markdown("<br>", unsafe_allow_html=True)
+
+      cols = st.columns(7)
+      for i, day_name in enumerate(weekdays):
+        cols[i].markdown(f"<div style='text-align: center; font-weight: bold; color: #64748b; font-size: 0.75rem;'>{day_name}</div>", unsafe_allow_html=True)
+
+      cal_matrix = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
+      for week in cal_matrix:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+          with cols[i]:
+            if day == 0:
+              st.write("")
             else:
-              adm_color = "#8e44ad"
-
-          admin_cal_events.append({
-              "title": f"{content_str}(残{rem})",
-              "start": str(row["date"]),
-              "allDay": True,
-              "backgroundColor": adm_color,
-              "borderColor": adm_color,
-          })
-
-      # 管理人カレンダーにもメモを表示
-      if not df_memos.empty:
-        for _, row in df_memos.iterrows():
-          admin_cal_events.append({
-              "title": str(row["content"]),
-              "start": str(row["date"]),
-              "allDay": True,
-              "backgroundColor": "#7f8c8d",
-              "borderColor": "#7f8c8d",
-          })
-
-      admin_calendar_options = {
-          "headerToolbar": {
-              "left": "prev,next today",
-              "center": "title",
-              "right": "",
-          },
-          "initialView": "dayGridMonth",
-          "selectable": True,
-          "editable": False,
-          "height": "420px",
-      }
-      admin_cal_return = calendar(
-          events=admin_cal_events,
-          options=admin_calendar_options,
-          key="admin_calendar",
-      )
-
-      if admin_cal_return and "dateClick" in admin_cal_return:
-        clicked_date_str = admin_cal_return["dateClick"].get("date")
-        if clicked_date_str:
-          date_part = clicked_date_str.split("T")[0]
-          parsed_date = datetime.strptime(date_part, "%Y-%m-%d").date()
-          
-          import datetime as dt
-          st.session_state.admin_selected_date = parsed_date + dt.timedelta(days=1)
+              date_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
+              if st.button(f"{day}", key=f"adm_day_{date_str}", use_container_width=True):
+                st.session_state.admin_selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                st.rerun()
 
       st.markdown("---")
       st.subheader("新しい開催枠の追加")
@@ -460,13 +499,7 @@ elif menu == "🔐 管理人ページ":
         elif "ダーツ" in content:
           st.session_state.capacity_input = 6
 
-      default_date = (
-          st.session_state.admin_selected_date
-          if st.session_state.admin_selected_date
-          else datetime.today().date()
-      )
-
-      new_date = st.date_input("開催日", value=default_date)
+      new_date = st.date_input("開催日", value=st.session_state.admin_selected_date)
       new_content = st.selectbox(
           "コンテンツ",
           ["BBQ", "ドラム", "ダーツ"],
@@ -494,7 +527,6 @@ elif menu == "🔐 管理人ページ":
       if not df_schedules.empty:
         st.dataframe(df_schedules, use_container_width=True)
 
-        # IDを表示しないように変更
         schedule_options = {
             f"{row['date']} - {row['content']} (定員: {row['capacity']})": row
             for _, row in df_schedules.iterrows()
@@ -587,7 +619,6 @@ elif menu == "🔐 管理人ページ":
       if not df_memos.empty:
         st.dataframe(df_memos, use_container_width=True)
 
-        # IDを表示しないように変更
         memo_options = {
             f"{row['date']} - {row['content']}": row
             for _, row in df_memos.iterrows()
@@ -673,7 +704,6 @@ elif menu == "🔐 管理人ページ":
       st.markdown("---")
       st.subheader("レッスン資料の編集・削除")
       if not df_lessons.empty:
-        # IDを表示しないように変更
         lesson_options = {
             f"{row['title']}": row
             for _, row in df_lessons.iterrows()
@@ -687,7 +717,7 @@ elif menu == "🔐 管理人ページ":
           sel_id = str(selected_row["id"])
 
           with st.form(f"edit_lesson_form_{sel_id}"):
-            e_title = st.text_input("タイトル", value=str(selected_row["title"]))
+            e_title = st.text_input("Title", value=str(selected_row["title"]))
             e_body = st.text_area("説明文・楽譜メモなど", value=str(selected_row["body"]))
             e_images = st.text_area(
                 "画像パス・URL（改行またはカンマ区切り）",
@@ -710,7 +740,7 @@ elif menu == "🔐 管理人ページ":
             with col_u1:
               update_btn = st.form_submit_button("更新する")
             with col_u2:
-              delete_btn = st.form_submit_button("このレッスンを削除する")
+              delete_btn = st.form_submit_button("このレッスン資料を削除する")
 
             if update_btn:
               formatted_images = ",".join(
