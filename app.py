@@ -14,6 +14,11 @@ st.set_page_config(
 # スマホファースト用カスタムCSS
 st.markdown("""
     <style>
+    /* Streamlitのデフォルトヘッダー（ハンバーガーメニュー等）を非表示にする */
+    [data-testid="stHeader"] {
+        display: none !important;
+    }
+
     .block-container {
         max-width: 480px !important;
         padding-top: 1rem !important;
@@ -384,13 +389,17 @@ if menu == "📅 予約カレンダー":
         else:
           img_path = "assets/darts.jpg"
 
-        try:
-          st.image(img_path, use_container_width=True)
-        except Exception:
-          pass
+        # アイコン程度にコンパクト表示（カラムで左右に配置）
+        c_img, c_text = st.columns([1, 5])
+        with c_img:
+          try:
+            st.image(img_path, width=45)
+          except Exception:
+            pass
+        with c_text:
+          st.markdown(f"**📅 日付:** {row['date']}")
+          st.markdown(f"**🎯 イベント:** {content_str}")
 
-        st.markdown(f"**📅 日付:** {row['date']}")
-        st.markdown(f"**🎯 イベント:** {content_str}")
         rem = row["remaining"]
         cap = row["capacity"]
         
@@ -412,21 +421,36 @@ if menu == "📅 予約カレンダー":
             )
             submit = st.form_submit_button("予約する", use_container_width=True)
             if submit:
-              if user_name.strip() == "":
+              entered_name = user_name.strip()
+              if entered_name == "":
                 st.warning("お名前を入力してください。")
               else:
-                st.session_state.my_name = user_name.strip()
-                new_row = [
-                    str(row["id"]),
-                    str(row["date"]),
-                    str(row["content"]),
-                    str(user_name.strip()),
-                ]
-                sheet.worksheet("reservations").append_row(new_row)
-                st.cache_data.clear()
-                st.success(f"{row['date']}の【{row['content']}】を予約しました！")
-                time.sleep(1)
-                st.rerun()
+                # すでに同じ名前で同じ枠（日付＆イベント内容）に予約がないかチェック
+                already_exists = False
+                if not df_reservations.empty:
+                  match = df_reservations[
+                      (df_reservations["date"] == str(row["date"])) &
+                      (df_reservations["content"] == str(row["content"])) &
+                      (df_reservations["name"] == entered_name)
+                  ]
+                  if not match.empty:
+                    already_exists = True
+
+                if already_exists:
+                  st.warning("すでに予約が入っています。")
+                else:
+                  st.session_state.my_name = entered_name
+                  new_row = [
+                      str(row["id"]),
+                      str(row["date"]),
+                      str(row["content"]),
+                      entered_name,
+                  ]
+                  sheet.worksheet("reservations").append_row(new_row)
+                  st.cache_data.clear()
+                  st.success(f"{row['date']}の【{row['content']}】を予約しました！")
+                  time.sleep(1)
+                  st.rerun()
         else:
           st.write("❌ 満席です")
         st.markdown(f"---")
@@ -449,9 +473,9 @@ elif menu == "👤 自分の予約・変更":
       my_res = df_reservations[df_reservations["name"] == st.session_state.my_name]
       
       if my_res.empty:
-        st.info(f"「{st.session_state.my_name}」様名義の予約は見つかりませんでした。")
+        st.info(f"{st.session_state.my_name}様名義の予約は見つかりませんでした。")
       else:
-        st.success(f"「{st.session_state.my_name}」様の予約（全 {len(my_res)} 件）")
+        st.success(f"{st.session_state.my_name}様の予約（全 {len(my_res)} 件）")
         
         for idx, res in my_res.iterrows():
           with st.container():
