@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
-# スマホファースト用カスタムCSS（横はみ出しを防ぎ、適切に折り返して縦に並べる設定）
+# スマホファースト用カスタムCSS（日付直後の確実な改行と、はみ出し防止対応）
 st.markdown("""
     <style>
     .block-container {
@@ -45,31 +45,29 @@ st.markdown("""
         transition: all 0.2s ease;
     }
 
-    /* カレンダー内の日付ボタン（スマホでの横はみ出しを防ぎ、安全に折り返す設定） */
+    /* カレンダー内の日付ボタン（日付の直後で折り返し、はみ出しを防ぐ設定） */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
         height: auto !important;
         min-height: 64px !important;
-        padding: 4px 0px !important;
+        padding: 4px 2px !important;
         font-size: 0.6rem !important;
-        line-height: 1.15 !important;
+        line-height: 1.2 !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
         white-space: pre-wrap !important;
         word-break: break-all !important;
-        overflow: visible !important;
-        text-overflow: clip !important;
+        overflow: hidden !important;
     }
 
-    /* ボタン内部のテキスト要素の折り返しとはみ出し防止 */
+    /* ボタン内部のテキスト要素 */
     div[data-testid="stColumn"] div[data-testid="stButton"] button div {
         width: 100% !important;
         white-space: pre-wrap !important;
         word-break: break-all !important;
-        overflow: visible !important;
-        text-overflow: clip !important;
+        overflow: hidden !important;
     }
 
     /* 月切り替えボタン等の幅調整 */
@@ -286,8 +284,9 @@ if menu == "📅 予約カレンダー":
           has_memo = not df_memos[(df_memos["date"] == date_str) & (df_memos["date"] >= today_str)].empty if not df_memos.empty else False
 
           if st.session_state.selected_date == date_str:
-            btn_label = f"⭐{day}"
+            btn_label = f"⭐\n{day}"
           elif not day_schedules.empty:
+            # 日付の直後に強制改行（\n）を入れる
             lines = [str(day)]
             for _, sch in day_schedules.iterrows():
               c_text = str(sch["content"])
