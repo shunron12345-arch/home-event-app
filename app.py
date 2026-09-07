@@ -220,7 +220,16 @@ with nav_col4:
     st.session_state.current_menu = "🔐 管理人ページ"
     st.rerun()
 
-st.markdown("---")
+# 使い方ガイドの表示
+st.markdown("""
+<div style="font-size: 0.8rem; color: #475569; background-color: #f8fafc; padding: 10px; border-radius: 6px; margin: 10px 0 15px 0; line-height: 1.4;">
+<b>【使い方】</b><br>
+📅 <b>予約：</b> カレンダーから予約<br>
+👤 <b>確認：</b> 予約の確認・キャンセル<br>
+🥁 <b>練習：</b> ドラムの楽譜等<br>
+🔐 <b>管理：</b> 管理人用
+</div>
+""", unsafe_allow_html=True)
 
 menu = st.session_state.current_menu
 
@@ -229,7 +238,7 @@ menu = st.session_state.current_menu
 # ---------------------------------------------------------
 if menu == "📅 予約カレンダー":
   st.title("予約カレンダー")
-  st.write("日付を選択すると、下のフォームがその日に絞り込まれます。")
+  st.write("日付を選択、フォームに名前を入力して、予約ボタンを押してください。")
 
   # データの集計処理
   if not df_schedules.empty:
@@ -389,7 +398,6 @@ if menu == "📅 予約カレンダー":
         else:
           img_path = "assets/darts.jpg"
 
-        # 画像サイズを3倍程度（幅135px）に調整し、バランスを取るためカラム比率を変更
         c_img, c_text = st.columns([1, 2])
         with c_img:
           try:
@@ -425,7 +433,6 @@ if menu == "📅 予約カレンダー":
               if entered_name == "":
                 st.warning("お名前を入力してください。")
               else:
-                # すでに同じ名前で同じ枠（日付＆イベント内容）に予約がないかチェック
                 already_exists = False
                 if not df_reservations.empty:
                   match = df_reservations[
@@ -730,8 +737,57 @@ elif menu == "🔐 管理人ページ":
             except Exception as e:
               st.error(f"エラー: {e}")
 
+      st.markdown("---")
+      st.subheader("メモ一覧・編集・削除")
+      if not df_memos.empty:
+        memo_options = {
+            f"{row['date']} - {row['content']}": row
+            for _, row in df_memos.iterrows()
+        }
+        selected_memo_key = st.selectbox(
+            "編集・削除するメモを選択", list(memo_options.keys()), key="edit_memo_select"
+        )
+
+        if selected_memo_key:
+          selected_memo_row = memo_options[selected_memo_key]
+          memo_sel_id = str(selected_memo_row["id"])
+
+          with st.form(f"edit_memo_form_{memo_sel_id}"):
+            try:
+              curr_memo_date = datetime.strptime(str(selected_memo_row["date"]), "%Y-%m-%d").date()
+            except Exception:
+              curr_memo_date = datetime.today().date()
+
+            e_memo_date = st.date_input("日付", value=curr_memo_date, key="e_memo_date")
+            e_memo_content = st.text_input("内容", value=str(selected_memo_row["content"]), key="e_memo_content")
+
+            update_memo_btn = st.form_submit_button("メモの更新", use_container_width=True)
+            delete_memo_btn = st.form_submit_button("このメモを削除", use_container_width=True)
+
+            if update_memo_btn:
+              cell = sheet.worksheet("memos").find(memo_sel_id)
+              if cell:
+                row_num = cell.row
+                sheet.worksheet("memos").update_cell(row_num, 2, str(e_memo_date))
+                sheet.worksheet("memos").update_cell(row_num, 3, e_memo_content)
+                st.cache_data.clear()
+                st.success("メモを更新しました！")
+                time.sleep(1)
+                st.rerun()
+
+            if delete_memo_btn:
+              cell = sheet.worksheet("memos").find(memo_sel_id)
+              if cell:
+                sheet.worksheet("memos").delete_rows(cell.row)
+                st.cache_data.clear()
+                st.success("メモを削除しました！")
+                time.sleep(1)
+                st.rerun()
+      else:
+        st.write("登録されたメモはありません。")
+
     with tab_les:
-      st.subheader("ドラム資料追加")
+      st.subheader("🥁 ドラム資料追加")
       with st.form("add_lesson_form"):
         l_title = st.text_input("タイトル")
         l_body = st.text_area("説明文")
@@ -757,10 +813,116 @@ elif menu == "🔐 管理人ページ":
           time.sleep(1)
           st.rerun()
 
+      st.markdown("---")
+      st.subheader("資料一覧・編集・削除")
+      if not df_lessons.empty:
+        lesson_options = {
+            f"[{row['status']}] {row['title']}": row
+            for _, row in df_lessons.iterrows()
+        }
+        selected_les_key = st.selectbox(
+            "編集・削除する資料を選択", list(lesson_options.keys()), key="edit_les_select"
+        )
+
+        if selected_les_key:
+          selected_les_row = lesson_options[selected_les_key]
+          les_sel_id = str(selected_les_row["id"])
+
+          with st.form(f"edit_les_form_{les_sel_id}"):
+            e_l_title = st.text_input("タイトル", value=str(selected_les_row["title"]), key="e_l_title")
+            e_l_body = st.text_area("説明文", value=str(selected_les_row["body"]), key="e_l_body")
+            e_l_images = st.text_area("画像URL（カンマまたは改行区切り）", value=str(selected_les_row["image_urls"]), key="e_l_images")
+            e_l_video = st.text_input("YouTube動画URL", value=str(selected_les_row["video_url"]), key="e_l_video")
+            
+            statuses = ["下書き", "公開"]
+            curr_status = str(selected_les_row["status"])
+            curr_status_idx = statuses.index(curr_status) if curr_status in statuses else 0
+            e_l_status = st.selectbox("ステータス", statuses, index=curr_status_idx, key="e_l_status")
+
+            update_les_btn = st.form_submit_button("資料の更新", use_container_width=True)
+            delete_les_btn = st.form_submit_button("この資料を削除", use_container_width=True)
+
+            if update_les_btn:
+              formatted_images = ",".join(
+                  [
+                      line.strip()
+                      for line in e_l_images.replace(",", "\n").split("\n")
+                      if line.strip()
+                  ]
+              )
+              cell = sheet.worksheet("lessons").find(les_sel_id)
+              if cell:
+                row_num = cell.row
+                sheet.worksheet("lessons").update_cell(row_num, 2, e_l_title)
+                sheet.worksheet("lessons").update_cell(row_num, 3, e_l_body)
+                sheet.worksheet("lessons").update_cell(row_num, 4, formatted_images)
+                sheet.worksheet("lessons").update_cell(row_num, 5, e_l_video)
+                sheet.worksheet("lessons").update_cell(row_num, 6, e_l_status)
+                st.cache_data.clear()
+                st.success("資料を更新しました！")
+                time.sleep(1)
+                st.rerun()
+
+            if delete_les_btn:
+              cell = sheet.worksheet("lessons").find(les_sel_id)
+              if cell:
+                sheet.worksheet("lessons").delete_rows(cell.row)
+                st.cache_data.clear()
+                st.success("資料を削除しました！")
+                time.sleep(1)
+                st.rerun()
+      else:
+        st.write("登録された資料はありません。")
+
     with tab_res_list:
-      st.subheader("全予約者データ")
+      st.subheader("全予約者データ（一覧）")
       if not df_reservations.empty:
         st.dataframe(df_reservations, use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("予約の削除・管理")
+        res_options = {
+            f"📅 {row['date']} - 🎯 {row['content']} - 👤 {row['name']}": row
+            for _, row in df_reservations.iterrows()
+        }
+        selected_res_key = st.selectbox(
+            "削除する予約を選択", list(res_options.keys()), key="delete_res_select"
+        )
+
+        if selected_res_key:
+          selected_res_row = res_options[selected_res_key]
+          
+          with st.form("admin_delete_res_form"):
+            st.write(f"以下の予約を削除しますか？")
+            st.markdown(f"- **日付:** {selected_res_row['date']}")
+            st.markdown(f"- **イベント:** {selected_res_row['content']}")
+            st.markdown(f"- **お名前:** {selected_res_row['name']}")
+            
+            admin_del_btn = st.form_submit_button("この予約を削除する", use_container_width=True)
+            
+            if admin_del_btn:
+              try:
+                cell_list = sheet.worksheet("reservations").findall(str(selected_res_row["name"]))
+                target_row = None
+                for c in cell_list:
+                  row_values = sheet.worksheet("reservations").row_values(c.row)
+                  if (len(row_values) >= 4 and 
+                      row_values[1] == str(selected_res_row["date"]) and 
+                      row_values[2] == str(selected_res_row["content"]) and 
+                      row_values[3] == str(selected_res_row["name"])):
+                    target_row = c.row
+                    break
+                
+                if target_row:
+                  sheet.worksheet("reservations").delete_rows(target_row)
+                  st.cache_data.clear()
+                  st.success("予約を削除しました！")
+                  time.sleep(1)
+                  st.rerun()
+                else:
+                  st.error("該当する予約データの行が見つかりませんでした。")
+              except Exception as e:
+                st.error(f"削除処理中にエラーが発生しました: {e}")
       else:
         st.write("まだ予約はありません。")
 
