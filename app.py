@@ -86,13 +86,14 @@ st.markdown("""
         width: 100% !important;
     }
 
-    /* 月切り替えコントロール用のコンパクトなボタン設定 */
+    /* 月切り替えコントロール用のコンパクトなボタン設定（全幅引き伸ばしを防止） */
     .month-nav-container div[data-testid="stButton"] button {
         height: 36px !important;
         min-height: 36px !important;
-        padding: 0px 4px !important;
+        padding: 0px 8px !important;
         font-size: 0.75rem !important;
-        width: 100% !important;
+        width: auto !important;
+        min-width: 65px !important;
         white-space: nowrap !important;
     }
     </style>
@@ -256,10 +257,16 @@ if menu == "📅 予約カレンダー":
   if "selected_date" not in st.session_state:
     st.session_state.selected_date = "すべて表示"
 
-  # 月切り替えコントロール
+  # 月切り替えコントロール（前月・タイトル・次月をコンパクトに横並び）
   st.markdown('<div class="month-nav-container">', unsafe_allow_html=True)
-  col_prev, col_title, col_next = st.columns([1, 1.8, 1])
+  col_title, col_prev, col_next = st.columns([2, 1, 1])
   
+  with col_title:
+    st.markdown(
+        f"<div style='font-size: 1.1rem; font-weight: bold; color: #000000; padding-top: 6px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
+        unsafe_allow_html=True,
+    )
+
   with col_prev:
     if st.button("◀ 前月", use_container_width=True):
       if st.session_state.cal_month == 1:
@@ -268,12 +275,6 @@ if menu == "📅 予約カレンダー":
       else:
         st.session_state.cal_month -= 1
       st.rerun()
-
-  with col_title:
-    st.markdown(
-        f"<div style='text-align: center; font-size: 1rem; font-weight: bold; color: #000000; padding-top: 8px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
-        unsafe_allow_html=True,
-    )
 
   with col_next:
     if st.button("次月 ▶", use_container_width=True):
@@ -360,92 +361,72 @@ if menu == "📅 予約カレンダー":
   st.markdown("---")
 
   # 予約申し込みフォーム
-  if df_schedules.empty or df_display.empty:
-    st.info("現在、公開されている開催予定はありません。")
+  st.subheader("🗓️ 予約申し込み")
+
+  if st.session_state.selected_date != "すべて表示":
+    filtered_display = df_display[df_display["date"] == st.session_state.selected_date] if not df_display.empty else pd.DataFrame()
   else:
-    st.subheader("🗓️ 予約申し込み")
-    date_list = sorted(df_display["date"].unique().tolist())
-    
-    filter_options = ["すべて表示"] + date_list
-    
-    current_index = 0
-    if st.session_state.selected_date in filter_options:
-      current_index = filter_options.index(st.session_state.selected_date)
+    filtered_display = df_display
 
-    filter_date = st.selectbox(
-        "日付で絞り込み",
-        filter_options,
-        index=current_index,
-        key="selectbox_filter_date"
-    )
+  if filtered_display.empty:
+    st.info("イベントの予定はありません")
+  else:
+    for index, row in filtered_display.iterrows():
+      with st.container():
+        content_str = str(row["content"])
+        if "BBQ" in content_str:
+          img_path = "assets/BBQ.jpg"
+        elif "ドラム" in content_str:
+          img_path = "assets/drums.jpg"
+        else:
+          img_path = "assets/darts.jpg"
 
-    if filter_date != st.session_state.selected_date:
-      st.session_state.selected_date = filter_date
+        try:
+          st.image(img_path, use_container_width=True)
+        except Exception:
+          pass
 
-    if st.session_state.selected_date != "すべて表示":
-      filtered_display = df_display[df_display["date"] == st.session_state.selected_date]
-    else:
-      filtered_display = df_display
+        st.markdown(f"**📅 日付:** {row['date']}")
+        st.markdown(f"**🎯 イベント:** {content_str}")
+        rem = row["remaining"]
+        cap = row["capacity"]
+        
+        if rem > 0:
+          st.markdown(
+              f"**🟢 残り枠:** <span style='color:green; font-weight:bold;'>{rem}枠</span> (定員: {cap}名)",
+              unsafe_allow_html=True,
+          )
+        else:
+          st.markdown(
+              f"**🔴 残り枠:** <span style='color:red; font-weight:bold;'>満席</span> (定員: {cap}名)",
+              unsafe_allow_html=True,
+          )
 
-    if filtered_display.empty:
-      st.info("イベントの予定はありません")
-    else:
-      for index, row in filtered_display.iterrows():
-        with st.container():
-          content_str = str(row["content"])
-          if "BBQ" in content_str:
-            img_path = "assets/BBQ.jpg"
-          elif "ドラム" in content_str:
-            img_path = "assets/drums.jpg"
-          else:
-            img_path = "assets/darts.jpg"
-
-          try:
-            st.image(img_path, use_container_width=True)
-          except Exception:
-            pass
-
-          st.markdown(f"**📅 日付:** {row['date']}")
-          st.markdown(f"**🎯 イベント:** {content_str}")
-          rem = row["remaining"]
-          cap = row["capacity"]
-          
-          if rem > 0:
-            st.markdown(
-                f"**🟢 残り枠:** <span style='color:green; font-weight:bold;'>{rem}枠</span> (定員: {cap}名)",
-                unsafe_allow_html=True,
+        if rem > 0:
+          with st.form(key=f"予約form_{row['id']}_{index}"):
+            user_name = st.text_input(
+                "お名前", value=st.session_state.my_name, key=f"name_{row['id']}_{index}"
             )
-          else:
-            st.markdown(
-                f"**🔴 残り枠:** <span style='color:red; font-weight:bold;'>満席</span> (定員: {cap}名)",
-                unsafe_allow_html=True,
-            )
-
-          if rem > 0:
-            with st.form(key=f"予約form_{row['id']}_{index}"):
-              user_name = st.text_input(
-                  "お名前", value=st.session_state.my_name, key=f"name_{row['id']}_{index}"
-              )
-              submit = st.form_submit_button("予約する", use_container_width=True)
-              if submit:
-                if user_name.strip() == "":
-                  st.warning("お名前を入力してください。")
-                else:
-                  st.session_state.my_name = user_name.strip()
-                  new_row = [
-                      str(row["id"]),
-                      str(row["date"]),
-                      str(row["content"]),
-                      str(user_name.strip()),
-                  ]
-                  sheet.worksheet("reservations").append_row(new_row)
-                  st.cache_data.clear()
-                  st.success(f"{row['date']}の【{row['content']}】を予約しました！")
-                  time.sleep(1)
-                  st.rerun()
-          else:
-            st.write("❌ 満席です")
-          st.markdown(f"---")
+            submit = st.form_submit_button("予約する", use_container_width=True)
+            if submit:
+              if user_name.strip() == "":
+                st.warning("お名前を入力してください。")
+              else:
+                st.session_state.my_name = user_name.strip()
+                new_row = [
+                    str(row["id"]),
+                    str(row["date"]),
+                    str(row["content"]),
+                    str(user_name.strip()),
+                ]
+                sheet.worksheet("reservations").append_row(new_row)
+                st.cache_data.clear()
+                st.success(f"{row['date']}の【{row['content']}】を予約しました！")
+                time.sleep(1)
+                st.rerun()
+        else:
+          st.write("❌ 満席です")
+        st.markdown(f"---")
 
 # ---------------------------------------------------------
 # 2. 自分の予約・変更ページ
@@ -561,7 +542,12 @@ elif menu == "🔐 管理人ページ":
         st.session_state.admin_selected_date = datetime.today().date()
 
       st.markdown('<div class="month-nav-container">', unsafe_allow_html=True)
-      col_aprev, col_atitle, col_anext = st.columns([1, 1.8, 1])
+      col_atitle, col_aprev, col_anext = st.columns([2, 1, 1])
+      with col_atitle:
+        st.markdown(
+            f"<div style='font-size: 1.1rem; font-weight: bold; color: #000000; padding-top: 6px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
+            unsafe_allow_html=True,
+        )
       with col_aprev:
         if st.button("◀ 前月", key="adm_prev", use_container_width=True):
           if st.session_state.cal_month == 1:
@@ -570,11 +556,6 @@ elif menu == "🔐 管理人ページ":
           else:
             st.session_state.cal_month -= 1
           st.rerun()
-      with col_atitle:
-        st.markdown(
-            f"<div style='text-align: center; font-size: 1rem; font-weight: bold; color: #000000; padding-top: 8px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
-            unsafe_allow_html=True,
-        )
       with col_anext:
         if st.button("次月 ▶", key="adm_next", use_container_width=True):
           if st.session_state.cal_month == 12:
