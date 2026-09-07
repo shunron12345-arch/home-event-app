@@ -16,7 +16,7 @@ st.markdown("""
     <style>
     .block-container {
         max-width: 480px !important;
-        padding-top: 1.5rem !important;
+        padding-top: 1rem !important;
         padding-bottom: 2rem !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
@@ -58,7 +58,7 @@ st.markdown("""
         transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
 
-    /* カレンダー内の日付ボタン（および月移動ボタン）の強制改行・省略防止 ＆ ズレ防止 */
+    /* カレンダー内の日付ボタン等の強制改行・省略防止 ＆ ズレ防止 */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
         height: auto !important;
@@ -192,12 +192,32 @@ df_schedules, df_reservations, df_lessons, df_memos = load_data()
 if "my_name" not in st.session_state:
   st.session_state.my_name = ""
 
+if "current_menu" not in st.session_state:
+  st.session_state.current_menu = "📅 予約カレンダー"
 
-# サイドバーメニュー
-st.sidebar.title("🏠 メニュー")
-menu = st.sidebar.radio(
-    "ページを選択", ["📅 予約カレンダー", "👤 自分の予約・変更", "🥁 ドラム練習用", "🔐 管理人ページ"]
-)
+
+# 画面上部の共通ナビゲーションバー（スマホでも押しやすいように4つのボタンを配置）
+nav_col1, nav_col2, nav_col3, nav_col4 = st.columns(4)
+with nav_col1:
+  if st.button("📅\n予約", use_container_width=True, key="nav_cal"):
+    st.session_state.current_menu = "📅 予約カレンダー"
+    st.rerun()
+with nav_col2:
+  if st.button("👤\n確認", use_container_width=True, key="nav_my"):
+    st.session_state.current_menu = "👤 自分の予約・変更"
+    st.rerun()
+with nav_col3:
+  if st.button("🥁\n練習", use_container_width=True, key="nav_drum"):
+    st.session_state.current_menu = "🥁 ドラム練習用"
+    st.rerun()
+with nav_col4:
+  if st.button("🔐\n管理", use_container_width=True, key="nav_admin"):
+    st.session_state.current_menu = "🔐 管理人ページ"
+    st.rerun()
+
+st.markdown("---")
+
+menu = st.session_state.current_menu
 
 # ---------------------------------------------------------
 # 1. 予約カレンダーページ
@@ -260,10 +280,7 @@ if menu == "📅 予約カレンダー":
   cal_matrix = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
   today_str = datetime.today().strftime("%Y-%m-%d")
 
-  # 1日〜末日までをフラットなリストにしつつ、前月・次月ボタンを前後に埋め込む構成にするため、セル要素を構築
-  # 月の最初の曜日の空きセル＋1日、から順にセルを配置していく
-  # カレンダーの各週を順番に処理
-  for week_idx, week in enumerate(cal_matrix):
+  for week in cal_matrix:
     cols = st.columns(7)
     for i, day in enumerate(week):
       with cols[i]:
@@ -313,7 +330,7 @@ if menu == "📅 予約カレンダー":
             st.session_state.selected_date = date_str
             st.rerun()
 
-  # カレンダーの下に「前月」「次月」ボタンを日付サイズと同じ仕様でグリッド風に並べる
+  # カレンダーの下に「前月」「次月」ボタン
   col_prev_btn, col_next_btn = st.columns(2)
   with col_prev_btn:
     if st.button("◀ 前月", key="cal_prev_month", use_container_width=True):
