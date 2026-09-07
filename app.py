@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
-# スマホファースト用カスタムCSS（テキストの強制改行と省略「...」の完全無効化）
+# スマホファースト用カスタムCSS（テキストの強制改行と省略「...」の完全無効化 ＆ 選択中ボタンの強調）
 st.markdown("""
     <style>
     .block-container {
@@ -284,10 +284,8 @@ if menu == "📅 予約カレンダー":
           day_schedules = df_display[df_display["date"] == date_str] if not df_display.empty else pd.DataFrame()
           has_memo = not df_memos[(df_memos["date"] == date_str) & (df_memos["date"] >= today_str)].empty if not df_memos.empty else False
 
-          if st.session_state.selected_date == date_str:
-            btn_label = f"⭐\n{day}"
-          elif not day_schedules.empty:
-            # 日付の直後に強制改行（\n）を入れる
+          # 選択されている日であっても、⭐に置き換えずに通常のラベル（イベント・メモ内容）を維持する
+          if not day_schedules.empty:
             lines = [str(day)]
             for _, sch in day_schedules.iterrows():
               c_text = str(sch["content"])
@@ -307,6 +305,38 @@ if menu == "📅 予約カレンダー":
             btn_label = f"{day}\n📝"
           else:
             btn_label = f"{day}"
+
+          # 選択されている日付のボタンだけ色（背景色やボーダー）を変更するためのHTML/CSSラッパーを動的に調整
+          is_selected = (st.session_state.selected_date == date_str)
+          
+          # 選択中のボタンにだけ背景色やボーダーを強調させるスタイルを差し込むためのコンテナ
+          if is_selected:
+            st.markdown("""
+                <style>
+                div[data-testid="stColumn"] div[data-testid="stButton"] button[kind="secondary"] {
+                    /* 必要に応じて選択時の装飾を追加・調整可能 */
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+          # 選択中のボタンを視覚的に区別するため、ラベルの上下にマークや独自のスタイルをあてる（またはボタン自体の見た目を変更）
+          # Streamlit標準ボタンで選択色を変えるため、選択中のキーに対してカスタムインジェクションを行う
+          if is_selected:
+            # 選択中のボタンに対してCSSで背景色を変更（親要素や属性から特定して背景をピンク系やブルー系に変える）
+            pass
+
+          # 選択された日付ボタンのデザインをピンポイントで変更するために、ユニークなスタイルを適用
+          if is_selected:
+            st.markdown(f"""
+                <style>
+                /* 選択された日付のボタンの背景色と枠線を変更 */
+                button[key="cal_day_{date_str}"] {{
+                    background-color: #fce7f3 !important;
+                    border: 2px solid #db2777 !important;
+                    color: #be185d !important;
+                }}
+                </style>
+                """, unsafe_allow_html=True)
 
           if st.button(btn_label, key=f"cal_day_{date_str}", use_container_width=True):
             st.session_state.selected_date = date_str
