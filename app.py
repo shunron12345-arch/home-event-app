@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
-# スマホファースト用カスタムCSS（スマホでのボタン内改行とレイアウトを強制）
+# スマホファースト用カスタムCSS（「...」での省略を完全に防ぎ、確実に改行表示させる設定）
 st.markdown("""
     <style>
     .block-container {
@@ -45,19 +45,28 @@ st.markdown("""
         transition: all 0.2s ease;
     }
 
-    /* カレンダー内の日付ボタン（スマホでも確実に改行・複数行表示させる設定） */
+    /* カレンダー内の日付ボタン（スマホでの「...」省略を解除し、複数行を完全に許可） */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
-        height: 64px !important;
+        height: auto !important;
         min-height: 64px !important;
-        padding: 2px 0px !important;
+        padding: 4px 1px !important;
         font-size: 0.65rem !important;
-        line-height: 1.15 !important;
+        line-height: 1.2 !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        white-space: pre-line !important;
+        white-space: pre-wrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+    }
+
+    /* ボタン内部のテキスト要素の省略も防止 */
+    div[data-testid="stColumn"] div[data-testid="stButton"] button div {
+        white-space: pre-wrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
     }
 
     /* 月切り替えボタン等の幅調整 */
@@ -273,7 +282,6 @@ if menu == "📅 予約カレンダー":
           day_schedules = df_display[df_display["date"] == date_str] if not df_display.empty else pd.DataFrame()
           has_memo = not df_memos[(df_memos["date"] == date_str) & (df_memos["date"] >= today_str)].empty if not df_memos.empty else False
 
-          # 複数イベントや残数に対応したラベルの構築（「枠」の文字は削除）
           if st.session_state.selected_date == date_str:
             btn_label = f"⭐{day}"
           elif not day_schedules.empty:
