@@ -1,6 +1,9 @@
 import calendar
 from datetime import datetime, date
 import time
+import smtplib
+from email.header import Header
+from email.mime.text import MIMEText
 from google.oauth2.service_account import Credentials
 import gspread
 import pandas as pd
@@ -14,7 +17,7 @@ st.set_page_config(
 # スマホファースト用カスタムCSS
 st.markdown("""
     <style>
-    /* Streamlitのデフォルトヘッダー（ハンバーガーメニュー等）を非表示にする */
+    /* Streamlitのデフォルトヘッダーを非表示にする */
     [data-testid="stHeader"] {
         display: none !important;
     }
@@ -27,14 +30,12 @@ st.markdown("""
         padding-right: 1rem !important;
     }
     
-    /* ページのメイン見出し（st.title）のフォントサイズを控えめに調整 */
     h1 {
         font-size: 1.4rem !important;
         font-weight: bold !important;
         padding-bottom: 0.5rem !important;
     }
 
-    /* サブ見出し（st.subheader）のサイズ調整 */
     h2, h3 {
         font-size: 1.1rem !important;
         font-weight: bold !important;
@@ -52,7 +53,7 @@ st.markdown("""
         width: calc(100% / 7) !important;
     }
 
-    /* ボタン共通のベーススタイル（ズレ防止のためボーダー幅を常時固定） */
+    /* ボタン共通のベーススタイル */
     div[data-testid="stButton"] button {
         border-radius: 6px;
         border: 2px solid #e2e8f0;
@@ -63,7 +64,7 @@ st.markdown("""
         transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
 
-    /* カレンダー内の日付ボタン等の強制改行・省略防止 ＆ ズレ防止 */
+    /* カレンダー内の日付ボタン等のスタイル */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
         height: auto !important;
@@ -78,7 +79,6 @@ st.markdown("""
         box-sizing: border-box !important;
     }
 
-    /* ボタン内部のすべてのテキストコンテナの折り返し・はみ出しブロック */
     div[data-testid="stColumn"] div[data-testid="stButton"] button div,
     div[data-testid="stColumn"] div[data-testid="stButton"] button p,
     div[data-testid="stColumn"] div[data-testid="stButton"] button span {
@@ -93,15 +93,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 曜日リストの定義
 weekdays = ["月", "火", "水", "木", "金", "土", "日"]
 
-# Googleスプレッドシート接続設定
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-
 
 @st.cache_resource
 def init_connection():
@@ -116,19 +113,43 @@ def init_connection():
   sheet = client.open("予約アプリ")
   return sheet
 
-
 try:
   sheet = init_connection()
 except Exception as e:
-  st.error(
-      f"スプレッドシートへの接続に失敗しました。認証設定を確認してください: {e}"
-  )
+  st.error(f"スプレッドシートへの接続に失敗しました: {e}")
   st.stop()
 
+def send_reservation_email(date_str, content_str, user_name):
+  try:
+    if "email" in st.secrets:
+      sender_email = st.secrets["email"]["sender_email"]
+      app_password = st.secrets["email"]["app_password"]
+    else:
+      return
 
-# データの読み込み関数
-@st.cache_data(ttl=30)
-def load_data():
+    recipient_email = "shunron12345@gmail.com"
+    subject = f"【予約通知】{user_name}様から新規予約が入りました"
+    body = (
+        f"新しい予約が登録されました。\n\n"
+        f"・日付: {date_str}\n"
+        f"・イベント: {content_str}\n"
+        f"・お名前: {user_name}様\n\n"
+        f"確認をお願いします。"
+    )
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = sender_email
+    msg["To"] = recipient_email
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+      server.login(sender_email, app_password)
+      server.sendmail(sender_email, [recipient_email], msg.as_string())
+  except Exception as e:
+    print(f"メール送信エラー: {e}")
+
+# キャッシュを手動クリアできるように変更 (st.cache_dataのクリア)
+def load_data_from_sheet():
   try:
     schedules_data = sheet.worksheet("schedules").get_all_records()
     reservations_data = sheet.worksheet("reservations").get_all_records()
@@ -183,25 +204,23 @@ def load_data():
     return (
         pd.DataFrame(columns=["id", "date", "content", "capacity"]),
         pd.DataFrame(columns=["id", "date", "content", "name"]),
-        pd.DataFrame(
-            columns=["id", "title", "body", "image_urls", "video_url", "status"]
-        ),
+        pd.DataFrame(columns=["id", "title", "body", "image_urls", "video_url", "status"]),
         pd.DataFrame(columns=["id", "date", "content"]),
     )
 
+@st.cache_data(ttl=60)
+def load_data_cached():
+  return load_data_from_sheet()
 
-df_schedules, df_reservations, df_lessons, df_memos = load_data()
+df_schedules, df_reservations, df_lessons, df_memos = load_data_cached()
 
-
-# ユーザのセッション状態の初期化
 if "my_name" not in st.session_state:
   st.session_state.my_name = ""
 
 if "current_menu" not in st.session_state:
   st.session_state.current_menu = "📅 予約カレンダー"
 
-
-# 画面上部の共通ナビゲーションバー（スマホでも押しやすいように4つのボタンを配置）
+# 画面上部の共通ナビゲーションバー
 nav_col1, nav_col2, nav_col3, nav_col4 = st.columns(4)
 with nav_col1:
   if st.button("📅\n予約", use_container_width=True, key="nav_cal"):
@@ -220,7 +239,6 @@ with nav_col4:
     st.session_state.current_menu = "🔐 管理人ページ"
     st.rerun()
 
-# 使い方ガイドの表示
 st.markdown("""
 <div style="font-size: 0.8rem; color: #475569; background-color: #f8fafc; padding: 10px; border-radius: 6px; margin: 10px 0 15px 0; line-height: 1.4;">
 <b>【使い方】</b><br>
@@ -240,7 +258,6 @@ if menu == "📅 予約カレンダー":
   st.title("予約カレンダー")
   st.write("日付を選択、フォームに名前を入力して、予約ボタンを押してください。")
 
-  # データの集計処理
   if not df_schedules.empty:
     if not df_reservations.empty:
       res_counts = (
@@ -260,7 +277,6 @@ if menu == "📅 予約カレンダー":
         df_display["capacity"] - df_display["booked_count"]
     )
 
-    # 過去の日付のイベントを自動的に除外
     today_str = datetime.today().strftime("%Y-%m-%d")
     df_display = df_display[df_display["date"] >= today_str]
 
@@ -272,7 +288,6 @@ if menu == "📅 予約カレンダー":
   else:
     df_display = pd.DataFrame(columns=["id", "date", "content", "capacity", "remaining"])
 
-  # セッションステートの初期化
   if "cal_year" not in st.session_state:
     st.session_state.cal_year = datetime.today().year
   if "cal_month" not in st.session_state:
@@ -280,13 +295,11 @@ if menu == "📅 予約カレンダー":
   if "selected_date" not in st.session_state:
     st.session_state.selected_date = "すべて表示"
 
-  # 現在の年月タイトル表示
   st.markdown(
       f"<div style='font-size: 1.2rem; font-weight: bold; color: #000000; text-align: center; margin-bottom: 10px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
       unsafe_allow_html=True,
   )
 
-  # カレンダーの描画
   cols = st.columns(7)
   for i, day_name in enumerate(weekdays):
     cols[i].markdown(f"<div style='text-align: center; font-weight: bold; color: #db2777; font-size: 0.75rem;'>{day_name}</div>", unsafe_allow_html=True)
@@ -328,23 +341,14 @@ if menu == "📅 予約カレンダー":
             btn_label = f"{day}"
 
           is_selected = (st.session_state.selected_date == date_str)
+          
+          # 選択中の見た目を安全に変更
+          btn_type = "primary" if is_selected else "secondary"
 
-          if is_selected:
-            st.markdown(f"""
-                <style>
-                button[key="cal_day_{date_str}"] {{
-                    background-color: #fce7f3 !important;
-                    border: 2px solid #db2777 !important;
-                    color: #be185d !important;
-                }}
-                </style>
-                """, unsafe_allow_html=True)
-
-          if st.button(btn_label, key=f"cal_day_{date_str}", use_container_width=True):
+          if st.button(btn_label, key=f"cal_day_{date_str}", use_container_width=True, type=btn_type):
             st.session_state.selected_date = date_str
             st.rerun()
 
-  # カレンダーの下に「前月」「次月」ボタン
   col_prev_btn, col_next_btn = st.columns(2)
   with col_prev_btn:
     if st.button("◀ 前月", key="cal_prev_month", use_container_width=True):
@@ -363,7 +367,6 @@ if menu == "📅 予約カレンダー":
         st.session_state.cal_month += 1
       st.rerun()
 
-  # 凡例
   st.markdown(
       "<p style='font-size: 0.75rem; color: #64748b; text-align: center; margin-top: 5px;'>"
       "🍖:BBQ ｜ 🥁:ドラム ｜ 🎯:ダーツ（数字は残り枠）"
@@ -377,7 +380,6 @@ if menu == "📅 予約カレンダー":
 
   st.markdown("---")
 
-  # 予約申し込みフォーム
   st.subheader("🗓️ 予約申し込み")
 
   if st.session_state.selected_date != "すべて表示":
@@ -454,7 +456,10 @@ if menu == "📅 予約カレンダー":
                       entered_name,
                   ]
                   sheet.worksheet("reservations").append_row(new_row)
-                  st.cache_data.clear()
+                  send_reservation_email(str(row["date"]), str(row["content"]), entered_name)
+
+                  st.cache_data.clear() # キャッシュをクリアして最新化
+                  time.sleep(0.5)
                   st.success(f"{row['date']}の【{row['content']}】を予約しました！")
                   time.sleep(1)
                   st.rerun()
@@ -502,6 +507,7 @@ elif menu == "👤 自分の予約・変更":
                 if target_row:
                   sheet.worksheet("reservations").delete_rows(target_row)
                   st.cache_data.clear()
+                  time.sleep(0.5)
                   st.success("予約をキャンセルしました。")
                   time.sleep(1)
                   st.rerun()
@@ -593,7 +599,7 @@ elif menu == "🔐 管理人ページ":
               st.write("")
             else:
               date_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
-              if st.button(f"{day}", key=f"adm_day_{date_str}", use_container_width=True):
+              if st.button(f"{day}", key=f"admin_cal_day_{date_str}", use_container_width=True):
                 st.session_state.admin_selected_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                 st.rerun()
 
@@ -650,6 +656,7 @@ elif menu == "🔐 管理人ページ":
             [sched_id, str(new_date), new_content, int(new_capacity)]
         )
         st.cache_data.clear()
+        time.sleep(0.5)
         st.success(f"{new_date} に枠を追加しました！")
         time.sleep(1)
         st.rerun()
@@ -669,6 +676,7 @@ elif menu == "🔐 管理人ページ":
           selected_sched_row = schedule_options[selected_sched_key]
           sched_sel_id = str(selected_sched_row["id"])
 
+          # 更新用フォームと削除用ボタンを分離して誤動作を防ぐ
           with st.form(f"edit_sched_form_{sched_sel_id}"):
             try:
               curr_date = datetime.strptime(str(selected_sched_row["date"]), "%Y-%m-%d").date()
@@ -689,7 +697,6 @@ elif menu == "🔐 管理人ページ":
             e_sched_capacity = st.number_input("定員数", min_value=1, value=curr_cap)
 
             update_sched_btn = st.form_submit_button("スケジュールの更新", use_container_width=True)
-            delete_sched_btn = st.form_submit_button("このスケジュールを削除", use_container_width=True)
 
             if update_sched_btn:
               cell = sheet.worksheet("schedules").find(sched_sel_id)
@@ -699,18 +706,21 @@ elif menu == "🔐 管理人ページ":
                 sheet.worksheet("schedules").update_cell(row_num, 3, e_sched_content)
                 sheet.worksheet("schedules").update_cell(row_num, 4, int(e_sched_capacity))
                 st.cache_data.clear()
+                time.sleep(0.5)
                 st.success("更新しました！")
                 time.sleep(1)
                 st.rerun()
 
-            if delete_sched_btn:
-              cell = sheet.worksheet("schedules").find(sched_sel_id)
-              if cell:
-                sheet.worksheet("schedules").delete_rows(cell.row)
-                st.cache_data.clear()
-                st.success("削除しました！")
-                time.sleep(1)
-                st.rerun()
+          # 削除はフォームの外に独立させることで不具合を防ぐ
+          if st.button("このスケジュールを削除する", key=f"del_sched_btn_{sched_sel_id}", use_container_width=True):
+            cell = sheet.worksheet("schedules").find(sched_sel_id)
+            if cell:
+              sheet.worksheet("schedules").delete_rows(cell.row)
+              st.cache_data.clear()
+              time.sleep(0.5)
+              st.success("削除しました！")
+              time.sleep(1)
+              st.rerun()
       else:
         st.write("スケジュールはありません。")
 
@@ -731,6 +741,7 @@ elif menu == "🔐 管理人ページ":
                   [memo_id, str(memo_date), memo_content]
               )
               st.cache_data.clear()
+              time.sleep(0.5)
               st.success("メモを追加しました！")
               time.sleep(1)
               st.rerun()
@@ -762,7 +773,6 @@ elif menu == "🔐 管理人ページ":
             e_memo_content = st.text_input("内容", value=str(selected_memo_row["content"]), key="e_memo_content")
 
             update_memo_btn = st.form_submit_button("メモの更新", use_container_width=True)
-            delete_memo_btn = st.form_submit_button("このメモを削除", use_container_width=True)
 
             if update_memo_btn:
               cell = sheet.worksheet("memos").find(memo_sel_id)
@@ -771,18 +781,20 @@ elif menu == "🔐 管理人ページ":
                 sheet.worksheet("memos").update_cell(row_num, 2, str(e_memo_date))
                 sheet.worksheet("memos").update_cell(row_num, 3, e_memo_content)
                 st.cache_data.clear()
+                time.sleep(0.5)
                 st.success("メモを更新しました！")
                 time.sleep(1)
                 st.rerun()
 
-            if delete_memo_btn:
-              cell = sheet.worksheet("memos").find(memo_sel_id)
-              if cell:
-                sheet.worksheet("memos").delete_rows(cell.row)
-                st.cache_data.clear()
-                st.success("メモを削除しました！")
-                time.sleep(1)
-                st.rerun()
+          if st.button("このメモを削除する", key=f"del_memo_btn_{memo_sel_id}", use_container_width=True):
+            cell = sheet.worksheet("memos").find(memo_sel_id)
+            if cell:
+              sheet.worksheet("memos").delete_rows(cell.row)
+              st.cache_data.clear()
+              time.sleep(0.5)
+              st.success("メモを削除しました！")
+              time.sleep(1)
+              st.rerun()
       else:
         st.write("登録されたメモはありません。")
 
@@ -809,6 +821,7 @@ elif menu == "🔐 管理人ページ":
               [les_id, l_title, l_body, formatted_images, l_video, l_status]
           )
           st.cache_data.clear()
+          time.sleep(0.5)
           st.success("追加しました！")
           time.sleep(1)
           st.rerun()
@@ -840,7 +853,6 @@ elif menu == "🔐 管理人ページ":
             e_l_status = st.selectbox("ステータス", statuses, index=curr_status_idx, key="e_l_status")
 
             update_les_btn = st.form_submit_button("資料の更新", use_container_width=True)
-            delete_les_btn = st.form_submit_button("この資料を削除", use_container_width=True)
 
             if update_les_btn:
               formatted_images = ",".join(
@@ -859,18 +871,20 @@ elif menu == "🔐 管理人ページ":
                 sheet.worksheet("lessons").update_cell(row_num, 5, e_l_video)
                 sheet.worksheet("lessons").update_cell(row_num, 6, e_l_status)
                 st.cache_data.clear()
+                time.sleep(0.5)
                 st.success("資料を更新しました！")
                 time.sleep(1)
                 st.rerun()
 
-            if delete_les_btn:
-              cell = sheet.worksheet("lessons").find(les_sel_id)
-              if cell:
-                sheet.worksheet("lessons").delete_rows(cell.row)
-                st.cache_data.clear()
-                st.success("資料を削除しました！")
-                time.sleep(1)
-                st.rerun()
+          if st.button("この資料を削除する", key=f"del_les_btn_{les_sel_id}", use_container_width=True):
+            cell = sheet.worksheet("lessons").find(les_sel_id)
+            if cell:
+              sheet.worksheet("lessons").delete_rows(cell.row)
+              st.cache_data.clear()
+              time.sleep(0.5)
+              st.success("資料を削除しました！")
+              time.sleep(1)
+              st.rerun()
       else:
         st.write("登録された資料はありません。")
 
@@ -892,37 +906,30 @@ elif menu == "🔐 管理人ページ":
         if selected_res_key:
           selected_res_row = res_options[selected_res_key]
           
-          with st.form("admin_delete_res_form"):
-            st.write(f"以下の予約を削除しますか？")
-            st.markdown(f"- **日付:** {selected_res_row['date']}")
-            st.markdown(f"- **イベント:** {selected_res_row['content']}")
-            st.markdown(f"- **お名前:** {selected_res_row['name']}")
-            
-            admin_del_btn = st.form_submit_button("この予約を削除する", use_container_width=True)
-            
-            if admin_del_btn:
-              try:
-                cell_list = sheet.worksheet("reservations").findall(str(selected_res_row["name"]))
-                target_row = None
-                for c in cell_list:
-                  row_values = sheet.worksheet("reservations").row_values(c.row)
-                  if (len(row_values) >= 4 and 
-                      row_values[1] == str(selected_res_row["date"]) and 
-                      row_values[2] == str(selected_res_row["content"]) and 
-                      row_values[3] == str(selected_res_row["name"])):
-                    target_row = c.row
-                    break
-                
-                if target_row:
-                  sheet.worksheet("reservations").delete_rows(target_row)
-                  st.cache_data.clear()
-                  st.success("予約を削除しました！")
-                  time.sleep(1)
-                  st.rerun()
-                else:
-                  st.error("該当する予約データの行が見つかりませんでした。")
-              except Exception as e:
-                st.error(f"削除処理中にエラーが発生しました: {e}")
+          if st.button("選択した予約を削除する", key="admin_del_res_btn", use_container_width=True):
+            try:
+              cell_list = sheet.worksheet("reservations").findall(str(selected_res_row["name"]))
+              target_row = None
+              for c in cell_list:
+                row_values = sheet.worksheet("reservations").row_values(c.row)
+                if (len(row_values) >= 4 and 
+                    row_values[1] == str(selected_res_row["date"]) and 
+                    row_values[2] == str(selected_res_row["content"]) and 
+                    row_values[3] == str(selected_res_row["name"])):
+                  target_row = c.row
+                  break
+              
+              if target_row:
+                sheet.worksheet("reservations").delete_rows(target_row)
+                st.cache_data.clear()
+                time.sleep(0.5)
+                st.success("予約を削除しました！")
+                time.sleep(1)
+                st.rerun()
+              else:
+                st.error("該当する予約データの行が見つかりませんでした。")
+            except Exception as e:
+              st.error(f"削除処理中にエラーが発生しました: {e}")
       else:
         st.write("まだ予約はありません。")
 
