@@ -1,5 +1,5 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, date
 import time
 from google.oauth2.service_account import Credentials
 import gspread
@@ -10,6 +10,9 @@ import streamlit as st
 st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
+
+# 曜日リストの定義（共通）
+weekdays = ["月", "火", "水", "木", "金", "土", "日"]
 
 # Googleスプレッドシート接続設定
 SCOPES = [
@@ -108,10 +111,15 @@ def load_data():
 df_schedules, df_reservations, df_lessons, df_memos = load_data()
 
 
+# ユーザのセッション状態の初期化（自分の名前をブラウザごとに記憶）
+if "my_name" not in st.session_state:
+  st.session_state.my_name = ""
+
+
 # サイドバーメニュー
 st.sidebar.title("🏠 メニュー")
 menu = st.sidebar.radio(
-    "ページを選択", ["📅 予約カレンダー", "🥁 ドラム練習用", "🔐 管理人ページ"]
+    "ページを選択", ["📅 予約カレンダー", "👤 自分の予約・変更", "🥁 ドラム練習用", "🔐 管理人ページ"]
 )
 
 # ---------------------------------------------------------
@@ -121,14 +129,14 @@ if menu == "📅 予約カレンダー":
   st.title("予約")
   st.write("カレンダーの日付をクリックすると、下の予約申し込みフォームがその日付に絞り込まれます。")
 
-  # ポップで楽しいカレンダーデザイン＆はみ出し防止CSS（7列グリッド専用）
+  # スマホ対応：ボタンが縦方向に自由に拡大・折り返しできるようにCSSを調整
   st.markdown("""
     <style>
     /* 7列グリッドの維持 */
     [data-testid="stHorizontalBlock"]:not(:has(> [data-testid="stColumn"]:nth-child(3):last-child)) {
         flex-direction: row !important;
         flex-wrap: nowrap !important;
-        gap: 3px !important;
+        gap: 2px !important;
     }
     [data-testid="stHorizontalBlock"]:not(:has(> [data-testid="stColumn"]:nth-child(3):last-child)) > [data-testid="stColumn"] {
         flex: 1 !important;
@@ -137,23 +145,30 @@ if menu == "📅 予約カレンダー":
     }
     /* ボタンの共通ポップデザイン */
     div[data-testid="stButton"] button {
-        border-radius: 10px;
+        border-radius: 8px;
         border: 2px solid #e2e8f0;
         background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
         color: #1e293b;
         font-weight: 700;
-        padding: 6px 18px !important;
+        padding: 6px 12px !important;
         font-size: 0.65rem !important;
         line-height: 1.2 !important;
         white-space: pre-line !important;
         box-shadow: 0 2px 4px rgba(0,0,0,0.04);
         transition: all 0.2s ease;
     }
-    /* カレンダー内の日付ボタン（幅100%・コンパクトフォント） */
+    /* カレンダー内の日付ボタン（縦方向に自由に拡大・テキスト折り返し対応） */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
-        padding: 4px 2px !important;
-        font-size: 0.58rem !important;
+        height: auto !important;
+        min-height: 50px !important;
+        padding: 4px 1px !important;
+        font-size: 0.55rem !important;
+        white-space: pre-line !important;
+    }
+    /* 月切り替えボタンのコンパクト化 */
+    div.row-widget.stButton > button {
+        width: 100% !important;
     }
     div[data-testid="stButton"] button:hover {
         border-color: #ec4899;
@@ -165,7 +180,6 @@ if menu == "📅 予約カレンダー":
     """, unsafe_allow_html=True)
 
   # データの集計処理
-  cal_events = []
   if not df_schedules.empty:
     if not df_reservations.empty:
       res_counts = (
@@ -184,6 +198,17 @@ if menu == "📅 予約カレンダー":
     df_display["remaining"] = (
         df_display["capacity"] - df_display["booked_count"]
     )
+
+    # 過去の日付のイベントを自動的に除外する処理
+    today_str = datetime.today().strftime("%Y-%m-%d")
+    df_display = df_display[df_display["date"] >= today_str]
+
+    # 同一日付に「1人以上予約されたイベント」がある場合、ほかの「予約0のイベント」を非表示にする処理
+    if not df_display.empty:
+      dates_with_bookings = df_display[df_display["booked_count"] > 0]["date"].unique()
+      df_display = df_display[
+          (~df_display["date"].isin(dates_with_bookings)) | (df_display["booked_count"] > 0)
+      ]
   else:
     df_display = pd.DataFrame(columns=["id", "date", "content", "capacity", "remaining"])
 
@@ -195,11 +220,11 @@ if menu == "📅 予約カレンダー":
   if "selected_date" not in st.session_state:
     st.session_state.selected_date = "すべて表示"
 
-  # 月切り替えコントロール（前月・次月をタイトルの横、または左側にまとめる）
-  col_title, col_prev, col_next = st.columns([2, 1, 1])
+  # 月切り替えコントロール
+  col_title, col_prev, col_next = st.columns([2, 1.2, 1.2])
   with col_title:
     st.markdown(
-        f"<h3 style='margin: 0; font-size: 1.3rem; padding-top: 5px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
+        f"<h3 style='margin: 0; font-size: 1.2rem; padding-top: 8px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
         unsafe_allow_html=True,
     )
   with col_prev:
@@ -222,12 +247,12 @@ if menu == "📅 予約カレンダー":
   st.markdown("<br>", unsafe_allow_html=True)
 
   # ネイティブカレンダー（グリッド表示）の描画
-  weekdays = ["月", "火", "水", "木", "金", "土", "日"]
   cols = st.columns(7)
   for i, day_name in enumerate(weekdays):
     cols[i].markdown(f"<div style='text-align: center; font-weight: bold; color: #db2777; font-size: 0.8rem;'>{day_name}</div>", unsafe_allow_html=True)
 
   cal_matrix = calendar.monthcalendar(st.session_state.cal_year, st.session_state.cal_month)
+  today_str = datetime.today().strftime("%Y-%m-%d")
   
   for week in cal_matrix:
     cols = st.columns(7)
@@ -238,11 +263,9 @@ if menu == "📅 予約カレンダー":
         else:
           date_str = f"{st.session_state.cal_year}-{st.session_state.cal_month:02d}-{day:02d}"
           
-          # その日のスケジュール情報を取得
           day_schedules = df_display[df_display["date"] == date_str] if not df_display.empty else pd.DataFrame()
-          has_memo = not df_memos[df_memos["date"] == date_str].empty if not df_memos.empty else False
+          has_memo = not df_memos[(df_memos["date"] == date_str) & (df_memos["date"] >= today_str)].empty if not df_memos.empty else False
 
-          # 選択中ならポップな星印をつける
           if st.session_state.selected_date == date_str:
             btn_label = f"⭐{day}\n"
           else:
@@ -253,23 +276,20 @@ if menu == "📅 予約カレンダー":
             for _, sched in day_schedules.iterrows():
               c_name = str(sched["content"])
               if "BBQ" in c_name:
-                short_name = "BBQ"
+                emoji = "🍖"
               elif "ドラム" in c_name:
-                short_name = "ドラム"
+                emoji = "🥁"
               elif "ダーツ" in c_name:
-                short_name = "ダーツ"
+                emoji = "🎯"
               else:
-                short_name = c_name[:3]
+                emoji = "📌"
               
               rem = sched["remaining"]
-              if rem > 0:
-                content_lines.append(f"{short_name}(残{rem})")
-              else:
-                content_lines.append(f"{short_name}(満)")
+              content_lines.append(f"{emoji}{rem}")
             
             btn_label += "\n".join(content_lines)
           elif has_memo:
-            btn_label += "📝メモ"
+            btn_label += "📝"
 
           if st.button(btn_label, key=f"cal_day_{date_str}", use_container_width=True):
             st.session_state.selected_date = date_str
@@ -281,8 +301,8 @@ if menu == "📅 予約カレンダー":
 
   st.markdown("---")
 
-  # 予約申し込みフォーム（一覧・絞り込み付き）
-  if df_schedules.empty:
+  # 予約申し込みフォーム
+  if df_schedules.empty or df_display.empty:
     st.info("現在、公開されている開催予定はありません。管理人ページから枠を追加してください。")
   else:
     st.subheader("🗓️ 予約申し込みフォーム（一覧）")
@@ -352,18 +372,19 @@ if menu == "📅 予約カレンダー":
             if rem > 0:
               with st.form(key=f"予約form_{row['id']}_{index}"):
                 user_name = st.text_input(
-                    "お名前", key=f"name_{row['id']}_{index}"
+                    "お名前", value=st.session_state.my_name, key=f"name_{row['id']}_{index}"
                 )
                 submit = st.form_submit_button("予約する")
                 if submit:
                   if user_name.strip() == "":
                     st.warning("お名前を入力してください。")
                   else:
+                    st.session_state.my_name = user_name.strip()
                     new_row = [
                         str(row["id"]),
                         str(row["date"]),
                         str(row["content"]),
-                        str(user_name),
+                        str(user_name.strip()),
                     ]
                     sheet.worksheet("reservations").append_row(new_row)
                     st.cache_data.clear()
@@ -377,7 +398,62 @@ if menu == "📅 予約カレンダー":
           st.markdown(f"---")
 
 # ---------------------------------------------------------
-# 2. ドラム練習用
+# 2. 自分の予約・変更ページ
+# ---------------------------------------------------------
+elif menu == "👤 自分の予約・変更":
+  st.title("👤 自分の予約一覧・キャンセル")
+  st.write("このブラウザで予約した際に入力したお名前をもとに、ご自身の予約を確認・キャンセルできます。")
+
+  input_name = st.text_input("お名前を入力して確認", value=st.session_state.my_name)
+  
+  if input_name:
+    st.session_state.my_name = input_name.strip()
+    
+    if df_reservations.empty:
+      st.info("現在、登録されている予約はありません。")
+    else:
+      my_res = df_reservations[df_reservations["name"] == st.session_state.my_name]
+      
+      if my_res.empty:
+        st.info(f"「{st.session_state.my_name}」様名義の予約は見つかりませんでした。")
+      else:
+        st.success(f"「{st.session_state.my_name}」様の予約が見つかりました（全 {len(my_res)} 件）")
+        
+        for idx, res in my_res.iterrows():
+          with st.container():
+            st.markdown(f"**📅 日付:** {res['date']}")
+            st.markdown(f"**🎯 イベント:** {res['content']}")
+            
+            if st.button("この予約をキャンセル（取り消し）する", key=f"cancel_{res['date']}_{res['content']}_{idx}"):
+              try:
+                # スプレッドシートから該当する行を検索して削除
+                cell = sheet.worksheet("reservations").find(str(res["name"]))
+                # 日付とコンテンツ、名前が一致する行を探す
+                cell_list = sheet.worksheet("reservations").findall(str(res["name"]))
+                target_row = None
+                for c in cell_list:
+                  row_values = sheet.worksheet("reservations").row_values(c.row)
+                  # row_values: [id, date, content, name]
+                  if len(row_values) >= 4 and row_values[1] == str(res["date"]) and row_values[2] == str(res["content"]) and row_values[3] == str(res["name"]):
+                    target_row = c.row
+                    break
+                
+                if target_row:
+                  sheet.worksheet("reservations").delete_rows(target_row)
+                  st.cache_data.clear()
+                  st.success("予約をキャンセルしました。")
+                  time.sleep(1)
+                  st.rerun()
+                else:
+                  st.error("該当する予約データの行が見つかりませんでした。")
+              except Exception as e:
+                st.error(f"キャンセル処理中にエラーが発生しました: {e}")
+            st.markdown("---")
+  else:
+    st.info("お名前を入力すると、該当する予約が表示されます。")
+
+# ---------------------------------------------------------
+# 3. ドラム練習用
 # ---------------------------------------------------------
 elif menu == "🥁 ドラム練習用":
   st.title("🥁 楽譜等の置き場")
@@ -420,7 +496,7 @@ elif menu == "🥁 ドラム練習用":
         st.markdown("---")
 
 # ---------------------------------------------------------
-# 3. 管理人ページ
+# 4. 管理人ページ
 # ---------------------------------------------------------
 elif menu == "🔐 管理人ページ":
   st.title("🔐 管理人専用ダッシュボード")
@@ -440,10 +516,10 @@ elif menu == "🔐 管理人ページ":
       if "admin_selected_date" not in st.session_state:
         st.session_state.admin_selected_date = datetime.today().date()
 
-      col_atitle, col_aprev, col_anext = st.columns([2, 1, 1])
+      col_atitle, col_aprev, col_anext = st.columns([2, 1.2, 1.2])
       with col_atitle:
         st.markdown(
-            f"<h3 style='margin: 0; font-size: 1.3rem; padding-top: 5px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
+            f"<h3 style='margin: 0; font-size: 1.2rem; padding-top: 8px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
             unsafe_allow_html=True,
         )
       with col_aprev:
