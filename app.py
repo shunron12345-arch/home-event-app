@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
-# スマホファースト用カスタムCSS（「...」での省略を完全に防ぎ、確実に改行表示させる設定）
+# スマホファースト用カスタムCSS（横はみ出しを防ぎ、適切に折り返して縦に並べる設定）
 st.markdown("""
     <style>
     .block-container {
@@ -45,26 +45,29 @@ st.markdown("""
         transition: all 0.2s ease;
     }
 
-    /* カレンダー内の日付ボタン（スマホでの「...」省略を解除し、複数行を完全に許可） */
+    /* カレンダー内の日付ボタン（スマホでの横はみ出しを防ぎ、安全に折り返す設定） */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
         height: auto !important;
         min-height: 64px !important;
-        padding: 4px 1px !important;
-        font-size: 0.65rem !important;
-        line-height: 1.2 !important;
+        padding: 4px 0px !important;
+        font-size: 0.6rem !important;
+        line-height: 1.15 !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
         white-space: pre-wrap !important;
+        word-break: break-all !important;
         overflow: visible !important;
         text-overflow: clip !important;
     }
 
-    /* ボタン内部のテキスト要素の省略も防止 */
+    /* ボタン内部のテキスト要素の折り返しとはみ出し防止 */
     div[data-testid="stColumn"] div[data-testid="stButton"] button div {
+        width: 100% !important;
         white-space: pre-wrap !important;
+        word-break: break-all !important;
         overflow: visible !important;
         text-overflow: clip !important;
     }
