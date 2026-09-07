@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
-# スマホファースト用カスタムCSS（テキストの強制改行と省略「...」の完全無効化 ＆ 選択中ボタンの強調）
+# スマホファースト用カスタムCSS
 st.markdown("""
     <style>
     .block-container {
@@ -22,6 +22,19 @@ st.markdown("""
         padding-right: 1rem !important;
     }
     
+    /* ページのメイン見出し（st.title）のフォントサイズを控えめに調整 */
+    h1 {
+        font-size: 1.4rem !important;
+        font-weight: bold !important;
+        padding-bottom: 0.5rem !important;
+    }
+
+    /* サブ見出し（st.subheader）のサイズ調整 */
+    h2, h3 {
+        font-size: 1.1rem !important;
+        font-weight: bold !important;
+    }
+
     /* 7列カレンダーグリッドの崩れ防止 */
     [data-testid="stHorizontalBlock"]:not(:has(> [data-testid="stColumn"]:nth-child(3):last-child)) {
         flex-direction: row !important;
@@ -34,7 +47,7 @@ st.markdown("""
         width: calc(100% / 7) !important;
     }
 
-    /* ボタン共通のベーススタイル */
+    /* ボタン共通のベーススタイル（ズレ防止のためボーダー幅を常時固定） */
     div[data-testid="stButton"] button {
         border-radius: 6px;
         border: 2px solid #e2e8f0;
@@ -42,23 +55,25 @@ st.markdown("""
         color: #1e293b;
         font-weight: 700;
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-        transition: all 0.2s ease;
+        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
 
-    /* カレンダー内の日付ボタンの強制改行・省略防止設定 */
+    /* カレンダー内の日付ボタンの強制改行・省略防止 ＆ ズレ防止（常に同じボックスサイズを維持） */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
         height: auto !important;
         min-height: 68px !important;
+        max-height: 68px !important;
         padding: 4px 1px !important;
         font-size: 0.6rem !important;
         line-height: 1.15 !important;
         white-space: pre-wrap !important;
         word-break: break-all !important;
         overflow-wrap: break-word !important;
+        box-sizing: border-box !important;
     }
 
-    /* ボタン内部のすべてのテキストコンテナ・段落タグの省略・はみ出しを完全ブロック */
+    /* ボタン内部のすべてのテキストコンテナの折り返し・はみ出しブロック */
     div[data-testid="stColumn"] div[data-testid="stButton"] button div,
     div[data-testid="stColumn"] div[data-testid="stButton"] button p,
     div[data-testid="stColumn"] div[data-testid="stButton"] button span {
@@ -71,10 +86,13 @@ st.markdown("""
         width: 100% !important;
     }
 
-    /* 月切り替えボタン等の幅調整 */
-    div.row-widget.stButton > button {
+    /* 月切り替えコントロール用のコンパクトなボタン設定 */
+    .month-nav-container div[data-testid="stButton"] button {
+        height: 36px !important;
+        min-height: 36px !important;
+        padding: 0px 4px !important;
+        font-size: 0.75rem !important;
         width: 100% !important;
-        height: 40px !important;
         white-space: nowrap !important;
     }
     </style>
@@ -239,12 +257,9 @@ if menu == "📅 予約カレンダー":
     st.session_state.selected_date = "すべて表示"
 
   # 月切り替えコントロール
-  col_title, col_prev, col_next = st.columns([1.8, 1.1, 1.1])
-  with col_title:
-    st.markdown(
-        f"<h3 style='margin: 0; font-size: 1.1rem; padding-top: 6px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
-        unsafe_allow_html=True,
-    )
+  st.markdown('<div class="month-nav-container">', unsafe_allow_html=True)
+  col_prev, col_title, col_next = st.columns([1, 1.8, 1])
+  
   with col_prev:
     if st.button("◀ 前月", use_container_width=True):
       if st.session_state.cal_month == 1:
@@ -253,6 +268,13 @@ if menu == "📅 予約カレンダー":
       else:
         st.session_state.cal_month -= 1
       st.rerun()
+
+  with col_title:
+    st.markdown(
+        f"<div style='text-align: center; font-size: 1rem; font-weight: bold; color: #000000; padding-top: 8px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
+        unsafe_allow_html=True,
+    )
+
   with col_next:
     if st.button("次月 ▶", use_container_width=True):
       if st.session_state.cal_month == 12:
@@ -261,6 +283,7 @@ if menu == "📅 予約カレンダー":
       else:
         st.session_state.cal_month += 1
       st.rerun()
+  st.markdown('</div>', unsafe_allow_html=True)
 
   st.markdown("<br>", unsafe_allow_html=True)
 
@@ -284,7 +307,6 @@ if menu == "📅 予約カレンダー":
           day_schedules = df_display[df_display["date"] == date_str] if not df_display.empty else pd.DataFrame()
           has_memo = not df_memos[(df_memos["date"] == date_str) & (df_memos["date"] >= today_str)].empty if not df_memos.empty else False
 
-          # 選択されている日であっても、⭐に置き換えずに通常のラベル（イベント・メモ内容）を維持する
           if not day_schedules.empty:
             lines = [str(day)]
             for _, sch in day_schedules.iterrows():
@@ -306,30 +328,11 @@ if menu == "📅 予約カレンダー":
           else:
             btn_label = f"{day}"
 
-          # 選択されている日付のボタンだけ色（背景色やボーダー）を変更するためのHTML/CSSラッパーを動的に調整
           is_selected = (st.session_state.selected_date == date_str)
-          
-          # 選択中のボタンにだけ背景色やボーダーを強調させるスタイルを差し込むためのコンテナ
-          if is_selected:
-            st.markdown("""
-                <style>
-                div[data-testid="stColumn"] div[data-testid="stButton"] button[kind="secondary"] {
-                    /* 必要に応じて選択時の装飾を追加・調整可能 */
-                }
-                </style>
-                """, unsafe_allow_html=True)
 
-          # 選択中のボタンを視覚的に区別するため、ラベルの上下にマークや独自のスタイルをあてる（またはボタン自体の見た目を変更）
-          # Streamlit標準ボタンで選択色を変えるため、選択中のキーに対してカスタムインジェクションを行う
-          if is_selected:
-            # 選択中のボタンに対してCSSで背景色を変更（親要素や属性から特定して背景をピンク系やブルー系に変える）
-            pass
-
-          # 選択された日付ボタンのデザインをピンポイントで変更するために、ユニークなスタイルを適用
           if is_selected:
             st.markdown(f"""
                 <style>
-                /* 選択された日付のボタンの背景色と枠線を変更 */
                 button[key="cal_day_{date_str}"] {{
                     background-color: #fce7f3 !important;
                     border: 2px solid #db2777 !important;
@@ -385,7 +388,7 @@ if menu == "📅 予約カレンダー":
       filtered_display = df_display
 
     if filtered_display.empty:
-      st.info("選択された日付の開催枠はありません。")
+      st.info("イベントの予定はありません")
     else:
       for index, row in filtered_display.iterrows():
         with st.container():
@@ -557,12 +560,8 @@ elif menu == "🔐 管理人ページ":
       if "admin_selected_date" not in st.session_state:
         st.session_state.admin_selected_date = datetime.today().date()
 
-      col_atitle, col_aprev, col_anext = st.columns([1.8, 1.1, 1.1])
-      with col_atitle:
-        st.markdown(
-            f"<h3 style='margin: 0; font-size: 1.1rem; padding-top: 6px; color: #000000; font-weight: bold;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</h3>",
-            unsafe_allow_html=True,
-        )
+      st.markdown('<div class="month-nav-container">', unsafe_allow_html=True)
+      col_aprev, col_atitle, col_anext = st.columns([1, 1.8, 1])
       with col_aprev:
         if st.button("◀ 前月", key="adm_prev", use_container_width=True):
           if st.session_state.cal_month == 1:
@@ -571,6 +570,11 @@ elif menu == "🔐 管理人ページ":
           else:
             st.session_state.cal_month -= 1
           st.rerun()
+      with col_atitle:
+        st.markdown(
+            f"<div style='text-align: center; font-size: 1rem; font-weight: bold; color: #000000; padding-top: 8px;'>{st.session_state.cal_year}年 {st.session_state.cal_month}月</div>",
+            unsafe_allow_html=True,
+        )
       with col_anext:
         if st.button("次月 ▶", key="adm_next", use_container_width=True):
           if st.session_state.cal_month == 12:
@@ -579,6 +583,7 @@ elif menu == "🔐 管理人ページ":
           else:
             st.session_state.cal_month += 1
           st.rerun()
+      st.markdown('</div>', unsafe_allow_html=True)
 
       st.markdown("<br>", unsafe_allow_html=True)
 
