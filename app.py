@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
-# スマホファースト用カスタムCSS（日付直後の確実な改行と、はみ出し防止対応）
+# スマホファースト用カスタムCSS（テキストの強制改行と省略「...」の完全無効化）
 st.markdown("""
     <style>
     .block-container {
@@ -45,29 +45,30 @@ st.markdown("""
         transition: all 0.2s ease;
     }
 
-    /* カレンダー内の日付ボタン（日付の直後で折り返し、はみ出しを防ぐ設定） */
+    /* カレンダー内の日付ボタンの強制改行・省略防止設定 */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
         height: auto !important;
-        min-height: 64px !important;
-        padding: 4px 2px !important;
+        min-height: 68px !important;
+        padding: 4px 1px !important;
         font-size: 0.6rem !important;
-        line-height: 1.2 !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
+        line-height: 1.15 !important;
         white-space: pre-wrap !important;
         word-break: break-all !important;
-        overflow: hidden !important;
+        overflow-wrap: break-word !important;
     }
 
-    /* ボタン内部のテキスト要素 */
-    div[data-testid="stColumn"] div[data-testid="stButton"] button div {
-        width: 100% !important;
+    /* ボタン内部のすべてのテキストコンテナ・段落タグの省略・はみ出しを完全ブロック */
+    div[data-testid="stColumn"] div[data-testid="stButton"] button div,
+    div[data-testid="stColumn"] div[data-testid="stButton"] button p,
+    div[data-testid="stColumn"] div[data-testid="stButton"] button span {
         white-space: pre-wrap !important;
         word-break: break-all !important;
-        overflow: hidden !important;
+        overflow-wrap: break-word !important;
+        text-overflow: clip !important;
+        overflow: visible !important;
+        display: block !important;
+        width: 100% !important;
     }
 
     /* 月切り替えボタン等の幅調整 */
