@@ -11,7 +11,7 @@ st.set_page_config(
     page_title="予約アプリ", page_icon="🏠", layout="centered"
 )
 
-# スマホファースト用カスタムCSS（ボタン内で改行表示できるように調整）
+# スマホファースト用カスタムCSS（スマホでのボタン内改行とレイアウトを強制）
 st.markdown("""
     <style>
     .block-container {
@@ -45,15 +45,19 @@ st.markdown("""
         transition: all 0.2s ease;
     }
 
-    /* カレンダー内の日付ボタン（複数行表示ができるよう高さを広げ、改行を有効化） */
+    /* カレンダー内の日付ボタン（スマホでも確実に改行・複数行表示させる設定） */
     div[data-testid="stColumn"] div[data-testid="stButton"] button {
         width: 100% !important;
-        height: 64px !important;       /* 複数行が入るように高さを調整 */
+        height: 64px !important;
         min-height: 64px !important;
         padding: 2px 0px !important;
-        font-size: 0.7rem !important;  /* 複数行でも収まるよう少し小さめのフォントに */
-        line-height: 1.1 !important;
-        white-space: pre-wrap !important; /* 改行を有効にする */
+        font-size: 0.65rem !important;
+        line-height: 1.15 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        white-space: pre-line !important;
     }
 
     /* 月切り替えボタン等の幅調整 */
@@ -269,14 +273,13 @@ if menu == "📅 予約カレンダー":
           day_schedules = df_display[df_display["date"] == date_str] if not df_display.empty else pd.DataFrame()
           has_memo = not df_memos[(df_memos["date"] == date_str) & (df_memos["date"] >= today_str)].empty if not df_memos.empty else False
 
-          # 複数イベントや残数に対応したラベルの構築
+          # 複数イベントや残数に対応したラベルの構築（「枠」の文字は削除）
           if st.session_state.selected_date == date_str:
-            btn_label = f"⭐ {day}"
+            btn_label = f"⭐{day}"
           elif not day_schedules.empty:
             lines = [str(day)]
             for _, sch in day_schedules.iterrows():
               c_text = str(sch["content"])
-              # アイコンに置き換え（または短縮）してスペースを節約
               if "BBQ" in c_text:
                 icon = "🍖"
               elif "ドラム" in c_text:
@@ -287,10 +290,10 @@ if menu == "📅 予約カレンダー":
                 icon = "📌"
               
               rem = sch["remaining"]
-              lines.append(f"{icon}{rem}枠")
+              lines.append(f"{icon}{rem}")
             btn_label = "\n".join(lines)
           elif has_memo:
-            btn_label = f"{day}\n📝メモ"
+            btn_label = f"{day}\n📝"
           else:
             btn_label = f"{day}"
 
@@ -301,7 +304,7 @@ if menu == "📅 予約カレンダー":
   # 凡例
   st.markdown(
       "<p style='font-size: 0.75rem; color: #64748b; text-align: center; margin-top: 5px;'>"
-      "🍖:BBQ ｜ 🥁:ドラム ｜ 🎯:ダーツ（数字は残り枠数）"
+      "🍖:BBQ ｜ 🥁:ドラム ｜ 🎯:ダーツ（数字は残り枠）"
       "</p>",
       unsafe_allow_html=True
   )
