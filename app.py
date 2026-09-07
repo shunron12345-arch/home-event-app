@@ -389,11 +389,11 @@ if menu == "📅 予約カレンダー":
         else:
           img_path = "assets/darts.jpg"
 
-        # アイコン程度にコンパクト表示（カラムで左右に配置）
-        c_img, c_text = st.columns([1, 5])
+        # 画像サイズを3倍程度（幅135px）に調整し、バランスを取るためカラム比率を変更
+        c_img, c_text = st.columns([1, 2])
         with c_img:
           try:
-            st.image(img_path, width=45)
+            st.image(img_path, width=135)
           except Exception:
             pass
         with c_text:
@@ -473,7 +473,7 @@ elif menu == "👤 自分の予約・変更":
       my_res = df_reservations[df_reservations["name"] == st.session_state.my_name]
       
       if my_res.empty:
-        st.info(f"{st.session_state.my_name}様名義の予約は見つかりませんでした。")
+        st.info(f"{st.session_state.my_name}様の予約は見つかりませんでした。")
       else:
         st.success(f"{st.session_state.my_name}様の予約（全 {len(my_res)} 件）")
         
