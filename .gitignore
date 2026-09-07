@@ -1,0 +1,6 @@
+# Streamlitのシークレットフォルダ
+.streamlit/
+
+# Pythonのキャッシュ
+__pycache__/
+*.pyc
