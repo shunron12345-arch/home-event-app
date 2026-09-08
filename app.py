@@ -4,6 +4,7 @@ import time
 import smtplib
 from email.header import Header
 from email.mime.text import MIMEText
+import re
 from google.oauth2.service_account import Credentials
 import gspread
 import pandas as pd
@@ -148,7 +149,6 @@ def send_reservation_email(date_str, content_str, user_name):
   except Exception as e:
     print(f"メール送信エラー: {e}")
 
-# キャッシュを手動クリアできるように変更 (st.cache_dataのクリア)
 def load_data_from_sheet():
   try:
     schedules_data = sheet.worksheet("schedules").get_all_records()
@@ -188,9 +188,14 @@ def load_data_from_sheet():
         pd.DataFrame(lessons_data)
         if lessons_data
         else pd.DataFrame(
-            columns=["id", "title", "body", "image_urls", "video_url", "status"]
+            columns=["id", "category", "title", "body", "image_urls", "video_url", "status"]
         )
     )
+    if "category" not in df_lessons.columns:
+      df_lessons["category"] = "一般"
+    else:
+      df_lessons["category"] = df_lessons["category"].fillna("一般").astype(str)
+      df_lessons.loc[df_lessons["category"].str.strip() == "", "category"] = "一般"
 
     df_memos = (
         pd.DataFrame(memos_data)
@@ -204,7 +209,7 @@ def load_data_from_sheet():
     return (
         pd.DataFrame(columns=["id", "date", "content", "capacity"]),
         pd.DataFrame(columns=["id", "date", "content", "name"]),
-        pd.DataFrame(columns=["id", "title", "body", "image_urls", "video_url", "status"]),
+        pd.DataFrame(columns=["id", "category", "title", "body", "image_urls", "video_url", "status"]),
         pd.DataFrame(columns=["id", "date", "content"]),
     )
 
@@ -342,7 +347,6 @@ if menu == "📅 予約カレンダー":
 
           is_selected = (st.session_state.selected_date == date_str)
           
-          # 選択中の見た目を安全に変更
           btn_type = "primary" if is_selected else "secondary"
 
           if st.button(btn_label, key=f"cal_day_{date_str}", use_container_width=True, type=btn_type):
@@ -378,7 +382,6 @@ if menu == "📅 予約カレンダー":
     st.session_state.selected_date = "すべて表示"
     st.rerun()
 
-  # 選択された日付のメモがあれば表示するセクション
   if st.session_state.selected_date != "すべて表示" and not df_memos.empty:
     selected_memos = df_memos[df_memos["date"] == st.session_state.selected_date]
     if not selected_memos.empty:
@@ -430,7 +433,7 @@ if menu == "📅 予約カレンダー":
         else:
           st.markdown(
               f"**🔴 残り枠:** <span style='color:red; font-weight:bold;'>満席</span> (定員: {cap}名)",
-              unsafe_allow_html=Type, # ※そのままコピーする場合は通常の文字列や修正点に注意
+              unsafe_allow_html=True,
           )
 
         if rem > 0:
@@ -467,7 +470,7 @@ if menu == "📅 予約カレンダー":
                   sheet.worksheet("reservations").append_row(new_row)
                   send_reservation_email(str(row["date"]), str(row["content"]), entered_name)
 
-                  st.cache_data.clear() # キャッシュをクリアして最新化
+                  st.cache_data.clear()
                   time.sleep(0.5)
                   st.success(f"{row['date']}の【{row['content']}】を予約しました！")
                   time.sleep(1)
@@ -540,36 +543,59 @@ elif menu == "🥁 ドラム練習用":
   else:
     if "image_urls" not in df_lessons.columns:
       df_lessons["image_urls"] = ""
+    if "category" not in df_lessons.columns:
+      df_lessons["category"] = "一般"
 
     published_lessons = df_lessons[df_lessons["status"] == "公開"]
     if published_lessons.empty:
       st.info("現在公開されている記事はありません。")
     else:
-      for _, lesson in published_lessons.iterrows():
-        st.markdown(f"## 🎵 {lesson['title']}")
-        st.write(lesson["body"])
+      cat_map = {}
+      for _, row in published_lessons.iterrows():
+        cat = str(row["category"]).strip()
+        if not cat:
+          cat = "一般"
+        
+        if cat not in cat_map:
+          cat_map[cat] = []
+        cat_map[cat].append(row)
 
-        if lesson["video_url"]:
-          st.markdown("### 📺 動画")
-          st.video(lesson["video_url"])
+      cat_list = list(cat_map.keys())
+      tabs = st.tabs(cat_list)
 
-        if lesson["image_urls"]:
-          st.markdown("### 🖼️ 楽譜等")
-          urls = [
-              url.strip()
-              for url in str(lesson["image_urls"]).split(",")
-              if url.strip()
-          ]
-          if len(urls) > 0:
-            if len(urls) == 1:
-              st.image(urls[0], use_container_width=True)
-            else:
-              tabs = st.tabs([f"画像 {i+1}" for i in range(len(urls))])
-              for i, tab in enumerate(tabs):
-                with tab:
-                  st.image(urls[i], use_container_width=True)
+      for i, cat in enumerate(cat_list):
+        with tabs[i]:
+          items = cat_map[cat]
+          item_options = {str(item["title"]): item for item in items}
+          
+          selected_title = st.selectbox(
+              "項目を選択してください", 
+              list(item_options.keys()), 
+              key=f"select_lesson_{cat}"
+          )
 
-        st.markdown("---")
+          if selected_title:
+            lesson = item_options[selected_title]
+            st.markdown(f"## 🎵 {lesson['title']}")
+            st.write(lesson["body"])
+
+            if lesson["video_url"]:
+              st.markdown("### 📺 動画")
+              st.video(lesson["video_url"])
+
+            if lesson["image_urls"]:
+              st.markdown("### 🖼️ 楽譜等")
+              urls = [
+                  url.strip()
+                  for url in str(lesson["image_urls"]).split(",")
+                  if url.strip()
+              ]
+              if len(urls) > 0:
+                # すべての画像を文字なしで連続表示
+                for u in urls:
+                  st.image(u, use_container_width=True)
+
+          st.markdown("---")
 
 # ---------------------------------------------------------
 # 4. 管理人ページ
@@ -685,7 +711,6 @@ elif menu == "🔐 管理人ページ":
           selected_sched_row = schedule_options[selected_sched_key]
           sched_sel_id = str(selected_sched_row["id"])
 
-          # 更新用フォームと削除用ボタンを分離して誤動作を防ぐ
           with st.form(f"edit_sched_form_{sched_sel_id}"):
             try:
               curr_date = datetime.strptime(str(selected_sched_row["date"]), "%Y-%m-%d").date()
@@ -720,7 +745,6 @@ elif menu == "🔐 管理人ページ":
                 time.sleep(1)
                 st.rerun()
 
-          # 削除はフォームの外に独立させることで不具合を防ぐ
           if st.button("このスケジュールを削除する", key=f"del_sched_btn_{sched_sel_id}", use_container_width=True):
             cell = sheet.worksheet("schedules").find(sched_sel_id)
             if cell:
@@ -801,7 +825,7 @@ elif menu == "🔐 管理人ページ":
               sheet.worksheet("memos").delete_rows(cell.row)
               st.cache_data.clear()
               time.sleep(0.5)
-              st.success("メモラベルを削除しました！")
+              st.success("メモを削除しました！")
               time.sleep(1)
               st.rerun()
       else:
@@ -810,6 +834,7 @@ elif menu == "🔐 管理人ページ":
     with tab_les:
       st.subheader("🥁 ドラム資料追加")
       with st.form("add_lesson_form"):
+        l_category = st.text_input("タブ名（バンド名など。例: バンドA、一般）", value="一般")
         l_title = st.text_input("タイトル")
         l_body = st.text_area("説明文")
         l_images = st.text_area("画像URL（カンマまたは改行区切り）")
@@ -827,7 +852,7 @@ elif menu == "🔐 管理人ページ":
           )
           les_id = str(int(time.time()))
           sheet.worksheet("lessons").append_row(
-              [les_id, l_title, l_body, formatted_images, l_video, l_status]
+              [les_id, l_category.strip() if l_category.strip() else "一般", l_title, l_body, formatted_images, l_video, l_status]
           )
           st.cache_data.clear()
           time.sleep(0.5)
@@ -839,26 +864,52 @@ elif menu == "🔐 管理人ページ":
       st.subheader("資料一覧・編集・削除")
       if not df_lessons.empty:
         lesson_options = {
-            f"[{row['status']}] {row['title']}": row
+            f"[{row['category']}] [{row['status']}] {row['title']}": row
             for _, row in df_lessons.iterrows()
         }
+
+        def update_les_form_values():
+          selected_key = st.session_state.edit_les_select
+          row_data = lesson_options[selected_key]
+          st.session_state.e_l_category = str(row_data.get("category", "一般"))
+          st.session_state.e_l_title = str(row_data["title"])
+          st.session_state.e_l_body = str(row_data["body"])
+          st.session_state.e_l_images = str(row_data["image_urls"])
+          st.session_state.e_l_video = str(row_data["video_url"])
+          st.session_state.e_l_status = str(row_data["status"])
+
         selected_les_key = st.selectbox(
-            "編集・削除する資料を選択", list(lesson_options.keys()), key="edit_les_select"
+            "編集・削除する資料を選択", 
+            list(lesson_options.keys()), 
+            key="edit_les_select",
+            on_change=update_les_form_values
         )
 
         if selected_les_key:
           selected_les_row = lesson_options[selected_les_key]
           les_sel_id = str(selected_les_row["id"])
 
+          if "e_l_category" not in st.session_state:
+            st.session_state.e_l_category = str(selected_les_row.get("category", "一般"))
+            st.session_state.e_l_title = str(selected_les_row["title"])
+            st.session_state.e_l_body = str(selected_les_row["body"])
+            st.session_state.e_l_images = str(selected_les_row["image_urls"])
+            st.session_state.e_l_video = str(selected_les_row["video_url"])
+            st.session_state.e_l_status = str(selected_les_row["status"])
+
           with st.form(f"edit_les_form_{les_sel_id}"):
-            e_l_title = st.text_input("タイトル", value=str(selected_les_row["title"]), key="e_l_title")
-            e_l_body = st.text_area("説明文", value=str(selected_les_row["body"]), key="e_l_body")
-            e_l_images = st.text_area("画像URL（カンマまたは改行区切り）", value=str(selected_les_row["image_urls"]), key="e_l_images")
-            e_l_video = st.text_input("YouTube動画URL", value=str(selected_les_row["video_url"]), key="e_l_video")
+            e_l_category = st.text_input("タブ名（バンド名など）", key="e_l_category")
+            e_l_title = st.text_input("タイトル", key="e_l_title")
+            e_l_body = st.text_area("説明文", key="e_l_body")
+            e_l_images = st.text_area("画像URL（カンマまたは改行区切り）", key="e_l_images")
+            e_l_video = st.text_input("YouTube動画URL", key="e_l_video")
             
             statuses = ["下書き", "公開"]
-            curr_status = str(selected_les_row["status"])
-            curr_status_idx = statuses.index(curr_status) if curr_status in statuses else 0
+            curr_status_idx = (
+                statuses.index(st.session_state.e_l_status)
+                if st.session_state.e_l_status in statuses
+                else 0
+            )
             e_l_status = st.selectbox("ステータス", statuses, index=curr_status_idx, key="e_l_status")
 
             update_les_btn = st.form_submit_button("資料の更新", use_container_width=True)
@@ -874,16 +925,21 @@ elif menu == "🔐 管理人ページ":
               cell = sheet.worksheet("lessons").find(les_sel_id)
               if cell:
                 row_num = cell.row
-                sheet.worksheet("lessons").update_cell(row_num, 2, e_l_title)
-                sheet.worksheet("lessons").update_cell(row_num, 3, e_l_body)
-                sheet.worksheet("lessons").update_cell(row_num, 4, formatted_images)
-                sheet.worksheet("lessons").update_cell(row_num, 5, e_l_video)
-                sheet.worksheet("lessons").update_cell(row_num, 6, e_l_status)
-                st.cache_data.clear()
-                time.sleep(0.5)
-                st.success("資料を更新しました！")
-                time.sleep(1)
-                st.rerun()
+                try:
+                  sheet.worksheet("lessons").update_cell(row_num, 2, e_l_category.strip() if e_l_category.strip() else "一般")
+                  sheet.worksheet("lessons").update_cell(row_num, 3, e_l_title)
+                  sheet.worksheet("lessons").update_cell(row_num, 4, e_l_body)
+                  sheet.worksheet("lessons").update_cell(row_num, 5, formatted_images)
+                  sheet.worksheet("lessons").update_cell(row_num, 6, e_l_video)
+                  sheet.worksheet("lessons").update_cell(row_num, 7, e_l_status)
+
+                  st.cache_data.clear()
+                  time.sleep(0.5)
+                  st.success("資料を更新しました！")
+                  time.sleep(1)
+                  st.rerun()
+                except Exception as e:
+                  st.error(f"更新中にエラーが発生しました: {e}")
 
           if st.button("この資料を削除する", key=f"del_les_btn_{les_sel_id}", use_container_width=True):
             cell = sheet.worksheet("lessons").find(les_sel_id)
