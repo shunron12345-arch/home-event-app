@@ -369,7 +369,7 @@ if menu == "📅 予約カレンダー":
 
   st.markdown(
       "<p style='font-size: 0.75rem; color: #64748b; text-align: center; margin-top: 5px;'>"
-      "🍖:BBQ ｜ 🥁:ドラム ｜ 🎯:ダーツ（数字は残り枠）"
+      "🥁:ドラム ｜ 🎯:ダーツ ｜ 🍖:BBQ（数字は残り枠） ｜ 📝:メモあり"
       "</p>",
       unsafe_allow_html=True
   )
@@ -377,6 +377,15 @@ if menu == "📅 予約カレンダー":
   if st.button("すべての期間を表示する", use_container_width=True):
     st.session_state.selected_date = "すべて表示"
     st.rerun()
+
+  # 選択された日付のメモがあれば表示するセクション
+  if st.session_state.selected_date != "すべて表示" and not df_memos.empty:
+    selected_memos = df_memos[df_memos["date"] == st.session_state.selected_date]
+    if not selected_memos.empty:
+      st.markdown("---")
+      st.markdown(f"### 📝 {st.session_state.selected_date} のメモ")
+      for _, memo in selected_memos.iterrows():
+        st.info(memo["content"])
 
   st.markdown("---")
 
@@ -421,7 +430,7 @@ if menu == "📅 予約カレンダー":
         else:
           st.markdown(
               f"**🔴 残り枠:** <span style='color:red; font-weight:bold;'>満席</span> (定員: {cap}名)",
-              unsafe_allow_html=True,
+              unsafe_allow_html=Type, # ※そのままコピーする場合は通常の文字列や修正点に注意
           )
 
         if rem > 0:
@@ -625,22 +634,22 @@ elif menu == "🔐 管理人ページ":
 
       def on_content_change():
         content = st.session_state.content_select
-        if "BBQ" in content:
-          st.session_state.capacity_input = 4
-        elif "ドラム" in content:
+        if "ドラム" in content:
           st.session_state.capacity_input = 1
         elif "ダーツ" in content:
           st.session_state.capacity_input = 6
+        elif "BBQ" in content:
+          st.session_state.capacity_input = 4
 
       if "content_select" not in st.session_state:
-        st.session_state.content_select = "BBQ"
+        st.session_state.content_select = "ドラム"
       if "capacity_input" not in st.session_state:
-        st.session_state.capacity_input = 4
+        st.session_state.capacity_input = 1
 
       new_date = st.date_input("開催日", value=st.session_state.admin_selected_date)
       new_content = st.selectbox(
           "コンテンツ",
-          ["BBQ", "ドラム", "ダーツ"],
+          ["ドラム", "ダーツ", "BBQ"],
           key="content_select",
           on_change=on_content_change
       )
@@ -685,7 +694,7 @@ elif menu == "🔐 管理人ページ":
 
             e_sched_date = st.date_input("開催日", value=curr_date)
             
-            contents = ["BBQ", "ドラム", "ダーツ"]
+            contents = ["ドラム", "ダーツ", "BBQ"]
             curr_content = str(selected_sched_row["content"])
             curr_content_idx = contents.index(curr_content) if curr_content in contents else 0
             e_sched_content = st.selectbox("コンテンツ", contents, index=curr_content_idx)
@@ -792,7 +801,7 @@ elif menu == "🔐 管理人ページ":
               sheet.worksheet("memos").delete_rows(cell.row)
               st.cache_data.clear()
               time.sleep(0.5)
-              st.success("メモを削除しました！")
+              st.success("メモラベルを削除しました！")
               time.sleep(1)
               st.rerun()
       else:
